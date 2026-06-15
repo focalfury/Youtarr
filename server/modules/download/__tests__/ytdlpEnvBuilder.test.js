@@ -213,6 +213,33 @@ describe('ownerChannelMap', () => {
   });
 });
 
+describe('playlistName', () => {
+  test('sets YOUTARR_PLAYLIST_NAME and trims whitespace', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistName: '  My Playlist  ' } });
+    expect(env.YOUTARR_PLAYLIST_NAME).toBe('My Playlist');
+  });
+
+  test('omits YOUTARR_PLAYLIST_NAME when null', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistName: null } });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_NAME');
+  });
+
+  test('omits YOUTARR_PLAYLIST_NAME when empty string', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistName: '' } });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_NAME');
+  });
+
+  test('omits YOUTARR_PLAYLIST_NAME when whitespace-only', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistName: '   ' } });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_NAME');
+  });
+
+  test('does not set YOUTARR_PLAYLIST_NAME when no directives given', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {} });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_NAME');
+  });
+});
+
 describe('postProcessDirectives edge cases', () => {
   test('tolerates undefined postProcessDirectives and still builds baseline env', () => {
     const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: undefined });

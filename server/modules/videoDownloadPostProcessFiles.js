@@ -9,12 +9,16 @@ const downloadSettingsResolver = require('./download/downloadSettingsResolver');
 const YtdlpCommandBuilder = require('./download/ytdlpCommandBuilder');
 const { JobVideoDownload } = require('../models');
 const logger = require('../logger');
-const { buildChannelPath, cleanupEmptyParents, moveWithRetries, ensureDirWithRetries } = require('./filesystem');
+const { buildChannelPath, cleanupEmptyParents, moveWithRetries, ensureDirWithRetries, sanitizeNameLikeYtDlp } = require('./filesystem');
 
 const activeJobId = process.env.YOUTARR_JOB_ID;
 
 // Flat mode: skip video subfolder, files go directly in channel folder
 const isFlatMode = process.env.YOUTARR_SKIP_VIDEO_FOLDER === 'true';
+
+// Playlist subfolder support: inserts playlist name between channel folder and video folder
+const rawPlaylistName = process.env.YOUTARR_PLAYLIST_NAME || null;
+const playlistSubfolder = rawPlaylistName ? sanitizeNameLikeYtDlp(rawPlaylistName).substring(0, 80) : null;
 
 const videoPath = process.argv[2]; // get the media file path (video or audio)
 const parsedPath = path.parse(videoPath);
@@ -351,13 +355,26 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
     let finalVideoPathForJson;
 
     if (targetChannelFolder) {
-      // Channel has subfolder - calculate path with subfolder included
+      // Channel has subfolder - calculate path with subfolder (and optional playlist folder) included
       const videoFileName = path.basename(videoPath);
+      const playlistBase = playlistSubfolder ? path.join(targetChannelFolder, playlistSubfolder) : targetChannelFolder;
       if (isFlatMode) {
-        finalVideoPathForJson = path.join(targetChannelFolder, videoFileName);
+        finalVideoPathForJson = path.join(playlistBase, videoFileName);
       } else {
         const videoDirectoryName = path.basename(videoDirectory);
-        finalVideoPathForJson = path.join(targetChannelFolder, videoDirectoryName, videoFileName);
+        finalVideoPathForJson = path.join(playlistBase, videoDirectoryName, videoFileName);
+      }
+    } else if (playlistSubfolder) {
+      // No channel subfolder but playlist context: insert playlist name under channel folder
+      const standardFinalPath = tempPathManager.convertTempToFinal(videoPath);
+      const videoFileName = path.basename(videoPath);
+      if (isFlatMode) {
+        const channelFolder = path.dirname(standardFinalPath);
+        finalVideoPathForJson = path.join(channelFolder, playlistSubfolder, videoFileName);
+      } else {
+        const channelFolder = path.dirname(path.dirname(standardFinalPath));
+        const videoDirectoryName = path.basename(videoDirectory);
+        finalVideoPathForJson = path.join(channelFolder, playlistSubfolder, videoDirectoryName, videoFileName);
       }
     } else {
       // No subfolder - use standard temp-to-final conversion
@@ -554,26 +571,27 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
       let targetChannelFolderForMove;
 
       if (targetChannelFolder) {
+        // Playlist subfolder support: insert playlist name between channel folder and video folder
+        const playlistBase = playlistSubfolder ? path.join(targetChannelFolder, playlistSubfolder) : targetChannelFolder;
         if (isFlatMode) {
-          // Flat mode with subfolder - files go directly into channel folder
-          targetVideoDirectory = targetChannelFolder;
+          targetVideoDirectory = playlistBase;
         } else {
-          // Nested mode with subfolder - move video directory into subfolder location (atomic move)
-          targetVideoDirectory = path.join(targetChannelFolder, videoDirectoryName);
+          targetVideoDirectory = path.join(playlistBase, videoDirectoryName);
         }
-        targetChannelFolderForMove = targetChannelFolder;
-        console.log(`[Post-Process] Moving to subfolder location: ${channelSubFolder}`);
+        targetChannelFolderForMove = playlistBase;
+        console.log(`[Post-Process] Moving to subfolder location: ${channelSubFolder}${playlistSubfolder ? `/${playlistSubfolder}` : ''}`);
       } else {
-        // No subfolder - move to standard location
+        // No channel subfolder - move to standard location (with optional playlist folder)
         const standardFinalPath = tempPathManager.convertTempToFinal(videoPath);
         if (isFlatMode) {
-          // Flat mode without subfolder - channel folder is parent of final file
-          targetChannelFolderForMove = path.dirname(standardFinalPath);
+          const channelFolder = path.dirname(standardFinalPath);
+          targetChannelFolderForMove = playlistSubfolder ? path.join(channelFolder, playlistSubfolder) : channelFolder;
           targetVideoDirectory = targetChannelFolderForMove;
         } else {
           const standardChannelFolder = path.dirname(path.dirname(standardFinalPath));
-          targetVideoDirectory = path.join(standardChannelFolder, videoDirectoryName);
-          targetChannelFolderForMove = standardChannelFolder;
+          const playlistBase = playlistSubfolder ? path.join(standardChannelFolder, playlistSubfolder) : standardChannelFolder;
+          targetVideoDirectory = path.join(playlistBase, videoDirectoryName);
+          targetChannelFolderForMove = playlistBase;
         }
       }
 
@@ -736,9 +754,10 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
     // Copy channel thumbnail as poster.jpg to channel folder (must be done AFTER all moves)
     // Calculate the final channel folder path based on the final video path
     // In flat mode, the file is directly in the channel folder
-    const finalChannelFolderPath = isFlatMode
-      ? path.dirname(finalVideoPath)
-      : path.dirname(path.dirname(finalVideoPath));
+    // When a playlist subfolder is present the path has one extra level, so step up one more
+    const finalChannelFolderPath = playlistSubfolder
+      ? (isFlatMode ? path.dirname(path.dirname(finalVideoPath)) : path.dirname(path.dirname(path.dirname(finalVideoPath))))
+      : (isFlatMode ? path.dirname(finalVideoPath) : path.dirname(path.dirname(finalVideoPath)));
     if (jsonData.channel_id) {
       await copyChannelPosterIfNeeded(jsonData.channel_id, finalChannelFolderPath);
     }

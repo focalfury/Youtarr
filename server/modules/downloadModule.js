@@ -663,6 +663,8 @@ class DownloadModule {
           // the resolution priority in videoDownloadPostProcessFiles.js.
           ownerChannelId: channelId || null,
           ownerChannelMap: this.getJobDataValue(jobData, 'ownerChannelMap') || null,
+          // Playlist subfolder support: routes video into Channel/Playlist/Video structure
+          playlistName: this.getJobDataValue(jobData, 'playlistName') || null,
         }
       );
     }
@@ -778,7 +780,7 @@ class DownloadModule {
       if (routing.ratingFallback !== undefined) groupOverride.ratingFallback = routing.ratingFallback;
       // doSpecificDownloads accepts an Express-request shape (.body). runId ties
       // these jobs into the parent run so its summary aggregates them.
-      await this.doSpecificDownloads({ body: { urls, overrideSettings: groupOverride, jobLabel, runId: options.runId, ownerChannelMap } });
+      await this.doSpecificDownloads({ body: { urls, overrideSettings: groupOverride, jobLabel, runId: options.runId, ownerChannelMap, playlistName: playlist.title } });
     }
   }
 

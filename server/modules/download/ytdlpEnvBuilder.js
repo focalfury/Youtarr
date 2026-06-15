@@ -16,6 +16,7 @@ function buildYtdlpEnv({ jobId, tempBasePath, postProcessDirectives, baseEnv = p
     skipVideoFolder = false,
     ownerChannelId = null,
     ownerChannelMap = null,
+    playlistName = null,
   } = postProcessDirectives || {};
 
   const env = {
@@ -50,6 +51,11 @@ function buildYtdlpEnv({ jobId, tempBasePath, postProcessDirectives, baseEnv = p
   // The post-processor prefers it over the video's own channel_id when resolving the owner
   if (ownerChannelId !== null && ownerChannelId !== undefined && String(ownerChannelId).trim() !== '') {
     env.YOUTARR_OWNER_CHANNEL_ID = String(ownerChannelId).trim();
+  }
+
+  // Playlist subfolder support: post-processor inserts this as a directory between channel and video folder
+  if (playlistName !== null && playlistName !== undefined && String(playlistName).trim() !== '') {
+    env.YOUTARR_PLAYLIST_NAME = String(playlistName).trim();
   }
 
   // The post-processor looks up its own youtube_id, so a superset map is fine
