@@ -101,6 +101,7 @@ export const CONFIG_FIELDS = {
 
   // Kodi compatibility
   writeChannelPosters: { default: true, trackChanges: true },
+  writeSeasonPosters: { default: true, trackChanges: true },
   writeVideoNfoFiles: { default: true, trackChanges: true },
 
   // Notifications
@@ -214,6 +215,7 @@ export const DEFAULT_CONFIG: ConfigState = {
   cookiesEnabled: CONFIG_FIELDS.cookiesEnabled.default,
   customCookiesUploaded: CONFIG_FIELDS.customCookiesUploaded.default,
   writeChannelPosters: CONFIG_FIELDS.writeChannelPosters.default,
+  writeSeasonPosters: CONFIG_FIELDS.writeSeasonPosters.default,
   writeVideoNfoFiles: CONFIG_FIELDS.writeVideoNfoFiles.default,
   notificationsEnabled: CONFIG_FIELDS.notificationsEnabled.default,
   appriseUrls: CONFIG_FIELDS.appriseUrls.default,

@@ -3,9 +3,9 @@ jest.mock('../../logger', () => ({
   info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(),
 }));
 jest.mock('../../models', () => ({
-  Playlist: { findOne: jest.fn(), create: jest.fn(), update: jest.fn(), findAll: jest.fn() },
+  Playlist: { findOne: jest.fn(), create: jest.fn(), update: jest.fn(), findAll: jest.fn(), max: jest.fn() },
   PlaylistVideo: { findAll: jest.fn(), bulkCreate: jest.fn(), update: jest.fn(), destroy: jest.fn() },
-  Channel: { findAll: jest.fn() },
+  Channel: { findAll: jest.fn(), findOne: jest.fn() },
 }));
 jest.mock('../channelModule', () => ({
   upsertChannel: jest.fn(),
@@ -17,6 +17,30 @@ jest.mock('../youtubeApi', () => ({
   isAvailable: jest.fn(() => false),
   getApiKey: jest.fn(() => null),
   client: { getVideoMetadata: jest.fn() },
+}));
+jest.mock('fs-extra', () => ({
+  existsSync: jest.fn(() => false),
+  readdirSync: jest.fn(() => []),
+  copySync: jest.fn(),
+  outputFileSync: jest.fn(),
+}));
+jest.mock('axios', () => ({
+  get: jest.fn(),
+}));
+jest.mock('../configModule', () => ({
+  getConfig: jest.fn(() => ({})),
+  getImagePath: jest.fn(() => '/mock/images'),
+  directoryPath: '/library',
+}));
+jest.mock('../nfoGenerator', () => ({
+  writeVideoNfoFile: jest.fn(),
+  writeShowNfoFile: jest.fn(),
+}));
+jest.mock('../filesystem', () => ({
+  sanitizeNameLikeYtDlp: jest.fn((name) => name),
+}));
+jest.mock('sequelize', () => ({
+  Op: { ne: 'ne' },
 }));
 
 const { EventEmitter } = require('events');
@@ -30,6 +54,10 @@ describe('playlistModule', () => {
   let downloadModule;
   let childProcess;
   let youtubeApi;
+  let fs;
+  let axios;
+  let nfoGenerator;
+  let configModule;
 
   beforeEach(() => {
     jest.resetModules();
@@ -45,6 +73,10 @@ describe('playlistModule', () => {
     channelModule = require('../channelModule');
     downloadModule = require('../downloadModule');
     youtubeApi = require('../youtubeApi');
+    fs = require('fs-extra');
+    axios = require('axios');
+    nfoGenerator = require('../nfoGenerator');
+    configModule = require('../configModule');
   });
 
   describe('getPlaylistInfo', () => {
@@ -941,6 +973,116 @@ describe('playlistModule', () => {
       const rows = PlaylistVideo.bulkCreate.mock.calls[0][0];
       expect(rows.find((r) => r.youtube_id === 'a').published_at).toBe('20240115');
       expect(rows.find((r) => r.youtube_id === 'b').published_at).toBe('20240220');
+    });
+  });
+
+  describe('backfillSeasonPosters', () => {
+    const playlist = { playlist_id: 'PL1', season_number: 1, channel_id: 'ch1', title: 'My Playlist', thumbnail: 'https://img.example.com/thumb.jpg' };
+
+    beforeEach(() => {
+      Channel.findOne.mockResolvedValue({ folder_name: 'My Channel', uploader: 'My Channel' });
+      // Return false for poster.jpg (doesn't exist yet) and cached thumbnail (not downloaded yet);
+      // return true for outputDir and seasonFolderPath so the early-exit checks pass.
+      fs.existsSync.mockImplementation((p) => !p.endsWith('poster.jpg') && !p.includes('playlistthumb'));
+      axios.get.mockResolvedValue({ data: Buffer.from('img') });
+    });
+
+    it('downloads playlist thumbnail and copies as poster.jpg', async () => {
+      await playlistModule.backfillSeasonPosters([playlist]);
+
+      expect(axios.get).toHaveBeenCalledWith(playlist.thumbnail, expect.objectContaining({ responseType: 'arraybuffer' }));
+      expect(fs.copySync).toHaveBeenCalledWith(
+        expect.stringContaining('playlistthumb-PL1.jpg'),
+        expect.stringContaining('poster.jpg')
+      );
+    });
+
+    it('skips playlist with no season_number', async () => {
+      await playlistModule.backfillSeasonPosters([{ ...playlist, season_number: null }]);
+      expect(Channel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('skips playlist with no channel_id', async () => {
+      await playlistModule.backfillSeasonPosters([{ ...playlist, channel_id: null }]);
+      expect(Channel.findOne).not.toHaveBeenCalled();
+    });
+
+    it('skips when writeSeasonPosters is false', async () => {
+      configModule.getConfig.mockReturnValue({ writeSeasonPosters: false });
+
+      await playlistModule.backfillSeasonPosters([playlist]);
+
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('skips when poster.jpg already exists', async () => {
+      fs.existsSync.mockImplementation((p) => p.endsWith('poster.jpg') || p.includes('/library'));
+
+      await playlistModule.backfillSeasonPosters([playlist]);
+
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('falls back to episode thumbnail when thumbnail download fails', async () => {
+      axios.get.mockRejectedValueOnce(new Error('network'));
+      fs.readdirSync.mockReturnValue(['S01E001-Video.jpg']);
+
+      await playlistModule.backfillSeasonPosters([playlist]);
+
+      expect(fs.copySync).toHaveBeenCalledWith(
+        expect.stringContaining('S01E001-Video.jpg'),
+        expect.stringContaining('poster.jpg')
+      );
+    });
+  });
+
+  describe('backfillShowNfoFiles', () => {
+    const playlists = [
+      { playlist_id: 'PL1', season_number: 1, channel_id: 'ch1', title: 'Season One' },
+      { playlist_id: 'PL2', season_number: 2, channel_id: 'ch1', title: 'Season Two' },
+    ];
+
+    beforeEach(() => {
+      Channel.findOne.mockResolvedValue({ folder_name: 'My Channel', uploader: 'My Channel', title: 'My Channel', description: '' });
+      fs.existsSync.mockReturnValue(true);
+      Playlist.findAll.mockResolvedValue([
+        { season_number: 1, title: 'Season One' },
+        { season_number: 2, title: 'Season Two' },
+      ]);
+    });
+
+    it('writes tvshow.nfo with all seasons for the channel', async () => {
+      await playlistModule.backfillShowNfoFiles(playlists);
+
+      expect(nfoGenerator.writeShowNfoFile).toHaveBeenCalledWith(
+        expect.stringContaining('My Channel'),
+        expect.objectContaining({ title: 'My Channel' }),
+        [
+          { number: 1, title: 'Season One' },
+          { number: 2, title: 'Season Two' },
+        ]
+      );
+    });
+
+    it('skips playlists with no season_number', async () => {
+      await playlistModule.backfillShowNfoFiles([{ ...playlists[0], season_number: null }]);
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
+    });
+
+    it('skips when writeVideoNfoFiles is false', async () => {
+      configModule.getConfig.mockReturnValue({ writeVideoNfoFiles: false });
+
+      await playlistModule.backfillShowNfoFiles(playlists);
+
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
+    });
+
+    it('skips when channel folder does not exist on disk', async () => {
+      fs.existsSync.mockReturnValue(false);
+
+      await playlistModule.backfillShowNfoFiles(playlists);
+
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
     });
   });
 });

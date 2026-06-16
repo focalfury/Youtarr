@@ -1,7 +1,13 @@
 const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs-extra');
 const { Op } = require('sequelize');
+const axios = require('axios');
 const logger = require('../logger');
 const { Playlist, PlaylistVideo, Channel } = require('../models');
+const configModule = require('./configModule');
+const nfoGenerator = require('./nfoGenerator');
+const { sanitizeNameLikeYtDlp } = require('./filesystem');
 const youtubeApi = require('./youtubeApi');
 
 // yt-dlp's flat-playlist listing still returns private/deleted/members-only
@@ -379,6 +385,115 @@ class PlaylistModule {
         );
       } catch (err) {
         logger.error({ err, channelId }, 'Failed to auto-create source channel for downloaded playlist video');
+      }
+    }
+  }
+
+  async backfillSeasonPosters(playlists) {
+    const config = configModule.getConfig() || {};
+    if (config.writeSeasonPosters === false) return;
+
+    const outputDir = configModule.directoryPath;
+    const imageDir = configModule.getImagePath();
+    if (!outputDir || !fs.existsSync(outputDir)) return;
+
+    for (const playlist of playlists) {
+      if (playlist.season_number == null || !playlist.channel_id) continue;
+      try {
+        const channel = await Channel.findOne({
+          where: { channel_id: playlist.channel_id },
+          attributes: ['folder_name', 'uploader'],
+        });
+        if (!channel) continue;
+        const channelFolderName = channel.folder_name || channel.uploader;
+        if (!channelFolderName) continue;
+
+        const seasonPrefix = `Season ${String(playlist.season_number).padStart(2, '0')} - `;
+        const seasonTitle = sanitizeNameLikeYtDlp(playlist.title || '').substring(0, 80);
+        const seasonFolderName = seasonPrefix + seasonTitle;
+        const seasonFolderPath = path.join(outputDir, channelFolderName, seasonFolderName);
+        const posterPath = path.join(seasonFolderPath, 'poster.jpg');
+
+        if (!fs.existsSync(seasonFolderPath) || fs.existsSync(posterPath)) continue;
+
+        let copied = false;
+
+        if (playlist.thumbnail) {
+          const cachedPath = path.join(imageDir, `playlistthumb-${playlist.playlist_id}.jpg`);
+          let cacheReady = fs.existsSync(cachedPath);
+          if (!cacheReady) {
+            try {
+              const response = await axios.get(playlist.thumbnail, { responseType: 'arraybuffer', timeout: 15000 });
+              fs.outputFileSync(cachedPath, Buffer.from(response.data));
+              cacheReady = true;
+            } catch (fetchErr) {
+              logger.warn({ err: fetchErr, playlist_id: playlist.playlist_id }, 'Backfill: failed to download season thumbnail');
+            }
+          }
+          if (cacheReady) {
+            fs.copySync(cachedPath, posterPath);
+            logger.info({ seasonFolderPath }, 'Backfill: season poster.jpg created from playlist thumbnail');
+            copied = true;
+          }
+        }
+
+        if (!copied) {
+          const episodeThumb = fs.readdirSync(seasonFolderPath).find(f => f.endsWith('.jpg') && f !== 'poster.jpg');
+          if (episodeThumb) {
+            fs.copySync(path.join(seasonFolderPath, episodeThumb), posterPath);
+            logger.info({ seasonFolderPath, episodeThumb }, 'Backfill: season poster.jpg created from episode thumbnail');
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, playlist_id: playlist.playlist_id }, 'Backfill: error processing season poster');
+      }
+    }
+  }
+
+  async backfillShowNfoFiles(playlists) {
+    const config = configModule.getConfig() || {};
+    if (config.writeVideoNfoFiles === false) return;
+
+    const outputDir = configModule.directoryPath;
+    if (!outputDir || !fs.existsSync(outputDir)) return;
+
+    // Group playlists by channel_id, only for those with season_number assigned
+    const byChannel = new Map();
+    for (const p of playlists) {
+      if (p.season_number == null || !p.channel_id) continue;
+      if (!byChannel.has(p.channel_id)) byChannel.set(p.channel_id, []);
+      byChannel.get(p.channel_id).push(p);
+    }
+
+    for (const [channelId] of byChannel) {
+      try {
+        const channel = await Channel.findOne({
+          where: { channel_id: channelId },
+          attributes: ['folder_name', 'uploader', 'title', 'description'],
+        });
+        if (!channel) continue;
+        const channelFolderName = channel.folder_name || channel.uploader;
+        if (!channelFolderName) continue;
+
+        const channelFolderPath = path.join(outputDir, channelFolderName);
+        if (!fs.existsSync(channelFolderPath)) continue;
+
+        // Fetch the full ordered season list for this channel (not just the page subset)
+        const allPlaylists = await Playlist.findAll({
+          where: { channel_id: channelId },
+          order: [['season_number', 'ASC']],
+          attributes: ['season_number', 'title'],
+        });
+        const allSeasons = allPlaylists.filter((p) => p.season_number !== null);
+        if (allSeasons.length === 0) continue;
+
+        nfoGenerator.writeShowNfoFile(
+          channelFolderPath,
+          channel,
+          allSeasons.map(s => ({ number: s.season_number, title: s.title }))
+        );
+      } catch (err) {
+        logger.warn({ err, channelId }, 'Backfill: error writing tvshow.nfo');
       }
     }
   }

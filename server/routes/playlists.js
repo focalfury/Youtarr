@@ -71,6 +71,13 @@ function createPlaylistRoutes({ verifyToken, playlistModule, downloadModule, m3u
         order: [['updatedAt', 'DESC']],
       });
       res.json({ total: count, playlists: rows });
+      // Fire-and-forget backfill: season posters and tvshow.nfo for returned playlists
+      playlistModule.backfillSeasonPosters(rows).catch((err) =>
+        req.log.warn({ err }, 'backfillSeasonPosters failed')
+      );
+      playlistModule.backfillShowNfoFiles(rows).catch((err) =>
+        req.log.warn({ err }, 'backfillShowNfoFiles failed')
+      );
     } catch (err) {
       req.log.error({ err }, 'GET /api/playlists failed');
       res.status(500).json({ error: 'Failed to list playlists' });

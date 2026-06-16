@@ -7,7 +7,8 @@ const ratingMapper = require('./ratingMapper');
 const tempPathManager = require('./download/tempPathManager');
 const downloadSettingsResolver = require('./download/downloadSettingsResolver');
 const YtdlpCommandBuilder = require('./download/ytdlpCommandBuilder');
-const { JobVideoDownload } = require('../models');
+const { JobVideoDownload, Playlist, Channel } = require('../models');
+const axios = require('axios');
 const logger = require('../logger');
 const { buildChannelPath, cleanupEmptyParents, moveWithRetries, ensureDirWithRetries, sanitizeNameLikeYtDlp } = require('./filesystem');
 
@@ -131,6 +132,53 @@ async function copyChannelPosterIfNeeded(channelId, channelFolderPath) {
     }
   } catch (err) {
     logger.warn({ err }, 'Error copying channel poster');
+  }
+}
+
+function shouldWriteSeasonPosters() {
+  const config = configModule.getConfig() || {};
+  return config.writeSeasonPosters !== false;
+}
+
+async function downloadSeasonPosterIfMissing(playlistId, thumbnailUrl) {
+  const cachedPath = path.join(configModule.getImagePath(), `playlistthumb-${playlistId}.jpg`);
+  if (fs.existsSync(cachedPath)) return cachedPath;
+  try {
+    const response = await axios.get(thumbnailUrl, { responseType: 'arraybuffer', timeout: 15000 });
+    fs.outputFileSync(cachedPath, Buffer.from(response.data));
+    return cachedPath;
+  } catch (err) {
+    logger.warn({ err, playlistId }, 'Failed to download season thumbnail');
+    return null;
+  }
+}
+
+// Source priority: playlist thumbnail URL -> episode .jpg already on disk. Never the channel logo.
+async function copySeasonPosterIfNeeded(playlistId, thumbnailUrl, seasonFolderPath) {
+  if (!shouldWriteSeasonPosters()) return;
+  try {
+    const seasonPosterPath = path.join(seasonFolderPath, 'poster.jpg');
+    if (fs.existsSync(seasonPosterPath)) return;
+
+    if (thumbnailUrl) {
+      const cachedPath = await downloadSeasonPosterIfMissing(playlistId, thumbnailUrl);
+      if (cachedPath) {
+        fs.copySync(cachedPath, seasonPosterPath);
+        logger.info({ seasonFolderPath }, 'Season poster.jpg created from playlist thumbnail');
+        return;
+      }
+    }
+
+    // Fall back to an episode thumbnail already in the season folder (never the channel logo)
+    const episodeThumb = fs.existsSync(seasonFolderPath)
+      ? fs.readdirSync(seasonFolderPath).find(f => f.endsWith('.jpg') && f !== 'poster.jpg')
+      : null;
+    if (episodeThumb) {
+      fs.copySync(path.join(seasonFolderPath, episodeThumb), seasonPosterPath);
+      logger.info({ seasonFolderPath, episodeThumb }, 'Season poster.jpg created from episode thumbnail');
+    }
+  } catch (err) {
+    logger.warn({ err, seasonFolderPath }, 'Error copying season poster');
   }
 }
 
@@ -800,6 +848,32 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
       : (isFlatMode ? path.dirname(finalVideoPath) : path.dirname(path.dirname(finalVideoPath)));
     if (jsonData.channel_id) {
       await copyChannelPosterIfNeeded(jsonData.channel_id, finalChannelFolderPath);
+    }
+
+    if (playlistSubfolder && playlistIdEnv) {
+      const seasonFolderPath = path.join(finalChannelFolderPath, playlistSubfolder);
+      const playlistRow = await Playlist.findOne({
+        where: { playlist_id: playlistIdEnv },
+        attributes: ['thumbnail'],
+      });
+      await copySeasonPosterIfNeeded(playlistIdEnv, playlistRow?.thumbnail || null, seasonFolderPath);
+    }
+
+    if (playlistSubfolder && jsonData.channel_id && shouldWriteVideoNfoFiles()) {
+      const channel = await Channel.findOne({ where: { channel_id: jsonData.channel_id } });
+      const allPlaylists = await Playlist.findAll({
+        where: { channel_id: jsonData.channel_id },
+        order: [['season_number', 'ASC']],
+        attributes: ['season_number', 'title'],
+      });
+      const seasons = allPlaylists.filter((p) => p.season_number !== null);
+      if (seasons.length > 0) {
+        nfoGenerator.writeShowNfoFile(
+          finalChannelFolderPath,
+          channel || {},
+          seasons.map(s => ({ number: s.season_number, title: s.title }))
+        );
+      }
     }
 
     // Mark this video as completed in the JobVideoDownload tracking table

@@ -1,5 +1,7 @@
 /* eslint-env jest */
 
+const path = require('path');
+
 // Mock fs and logger modules before any imports
 jest.mock('fs');
 jest.mock('../../logger');
@@ -150,7 +152,8 @@ describe('NfoGenerator', () => {
 
   describe('writeVideoNfoFile', () => {
     const mockVideoPath = '/videos/test-video.mp4';
-    const mockNfoPath = '/videos/test-video.nfo';
+    const { dir: _nfoDir, name: _nfoName } = path.parse(mockVideoPath);
+    const mockNfoPath = path.format({ dir: _nfoDir, name: _nfoName, ext: '.nfo' });
 
     beforeEach(() => {
       fs.writeFileSync.mockClear();
@@ -288,14 +291,16 @@ describe('NfoGenerator', () => {
 
     it('should handle different file extensions', () => {
       const testPaths = [
-        { input: '/path/to/video.mkv', expected: '/path/to/video.nfo' },
-        { input: '/path/to/video.webm', expected: '/path/to/video.nfo' },
-        { input: '/path/to/video.with.dots.mp4', expected: '/path/to/video.with.dots.nfo' },
-        { input: '/path/video', expected: '/path/video.nfo' }
+        '/path/to/video.mkv',
+        '/path/to/video.webm',
+        '/path/to/video.with.dots.mp4',
+        '/path/video',
       ];
 
-      testPaths.forEach(({ input, expected }) => {
+      testPaths.forEach((input) => {
         fs.writeFileSync.mockClear();
+        const parsed = path.parse(input);
+        const expected = path.format({ dir: parsed.dir, name: parsed.name, ext: '.nfo' });
 
         nfoGenerator.writeVideoNfoFile(input, { title: 'Test' });
 
@@ -440,6 +445,78 @@ describe('NfoGenerator', () => {
       expect(nfoContent).toContain('<!-- Dates -->');
       expect(nfoContent).toContain('<dateadded>');
       expect(nfoContent).not.toContain('<premiered>');
+    });
+  });
+
+  describe('writeShowNfoFile', () => {
+    const channelFolderPath = '/output/My Channel';
+    const seasons = [
+      { number: 1, title: 'Season One Playlist' },
+      { number: 2, title: 'Season Two Playlist' },
+    ];
+
+    it('writes tvshow.nfo to channel folder with namedseason entries', () => {
+      nfoGenerator.writeShowNfoFile(channelFolderPath, {}, seasons);
+
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      const [writePath, content] = fs.writeFileSync.mock.calls[0];
+      expect(writePath).toContain('tvshow.nfo');
+      expect(content).toContain('<tvshow>');
+      expect(content).toContain('<namedseason number="1">Season One Playlist</namedseason>');
+      expect(content).toContain('<namedseason number="2">Season Two Playlist</namedseason>');
+      expect(content).toContain('</tvshow>');
+    });
+
+    it('writes seasons in provided order', () => {
+      const reversedSeasons = [
+        { number: 2, title: 'B Playlist' },
+        { number: 1, title: 'A Playlist' },
+      ];
+      nfoGenerator.writeShowNfoFile(channelFolderPath, {}, reversedSeasons);
+
+      const content = fs.writeFileSync.mock.calls[0][1];
+      const pos1 = content.indexOf('namedseason number="2"');
+      const pos2 = content.indexOf('namedseason number="1"');
+      expect(pos1).toBeLessThan(pos2);
+    });
+
+    it('includes channel title and plot when channelData provides them', () => {
+      nfoGenerator.writeShowNfoFile(channelFolderPath, { title: 'My Channel', description: 'A great channel' }, seasons);
+
+      const content = fs.writeFileSync.mock.calls[0][1];
+      expect(content).toContain('<title>My Channel</title>');
+      expect(content).toContain('<plot>A great channel</plot>');
+    });
+
+    it('omits title and plot when channelData is empty', () => {
+      nfoGenerator.writeShowNfoFile(channelFolderPath, {}, seasons);
+
+      const content = fs.writeFileSync.mock.calls[0][1];
+      expect(content).not.toContain('<title>');
+      expect(content).not.toContain('<plot>');
+    });
+
+    it('XML-escapes special characters in season titles', () => {
+      nfoGenerator.writeShowNfoFile(channelFolderPath, {}, [
+        { number: 1, title: 'Season & "Quotes" <here>' },
+      ]);
+
+      const content = fs.writeFileSync.mock.calls[0][1];
+      expect(content).toContain('Season &amp; &quot;Quotes&quot; &lt;here&gt;');
+    });
+
+    it('returns false and logs error when writeFileSync throws', () => {
+      fs.writeFileSync.mockImplementationOnce(() => { throw new Error('disk full'); });
+
+      const result = nfoGenerator.writeShowNfoFile(channelFolderPath, {}, seasons);
+
+      expect(result).toBe(false);
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('returns true on success', () => {
+      const result = nfoGenerator.writeShowNfoFile(channelFolderPath, {}, seasons);
+      expect(result).toBe(true);
     });
   });
 });

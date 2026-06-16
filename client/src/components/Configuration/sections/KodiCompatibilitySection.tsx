@@ -100,6 +100,32 @@ export const KodiCompatibilitySection: React.FC<KodiCompatibilitySectionProps> =
             </FormHelperText>
           </FormControl>
         </Grid>
+
+        <Grid item xs={12} md={6}>
+          <FormControl >
+            <FormControlLabel
+              control={
+                <Switch
+                  name="writeSeasonPosters"
+                  checked={config.writeSeasonPosters}
+                  onChange={handleCheckboxChange}
+                />
+              }
+              label={
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  Copy season poster.jpg files
+                  <InfoTooltip
+                    text="Copy playlist thumbnails into each season folder as poster.jpg, enabling Plex, Emby and Jellyfin to show per-season artwork instead of the channel logo."
+                    onMobileClick={onMobileTooltipClick}
+                  />
+                </div>
+              }
+            />
+            <FormHelperText>
+              Only applies to playlist downloads (Plex TV-show mode).
+            </FormHelperText>
+          </FormControl>
+        </Grid>
       </Grid>
     </ConfigurationAccordion>
   );

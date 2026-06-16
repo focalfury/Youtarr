@@ -16,6 +16,8 @@ jest.mock('fs-extra', () => {
     remove: jest.fn(),
     ensureDir: jest.fn(),
     readdir: jest.fn(),
+    readdirSync: jest.fn(() => []),
+    outputFileSync: jest.fn(),
   };
 
   mock.promises = {};
@@ -47,6 +49,11 @@ jest.mock('../configModule', () => ({
 
 jest.mock('../nfoGenerator', () => ({
   writeVideoNfoFile: jest.fn(),
+  writeShowNfoFile: jest.fn(),
+}));
+
+jest.mock('axios', () => ({
+  get: jest.fn(),
 }));
 
 const mockTempPathManager = {
@@ -76,13 +83,19 @@ const mockPlaylistVideo = {
   findOne: jest.fn(() => Promise.resolve(null))
 };
 
+const mockPlaylist = {
+  findOne: jest.fn(() => Promise.resolve(null)),
+  findAll: jest.fn(() => Promise.resolve([])),
+};
+
 jest.mock('../../models/channel', () => mockChannel);
 jest.mock('../../models/channelvideo', () => mockChannelVideo);
 jest.mock('../../models/playlistvideo', () => mockPlaylistVideo);
 
 jest.mock('../../models', () => ({
   JobVideoDownload: mockJobVideoDownload,
-  Channel: mockChannel
+  Channel: mockChannel,
+  Playlist: mockPlaylist,
 }));
 
 jest.mock('../../logger');
@@ -109,10 +122,11 @@ const childProcess = require('child_process');
 const configModule = require('../configModule');
 const nfoGenerator = require('../nfoGenerator');
 const tempPathManager = require('../download/tempPathManager');
-const { JobVideoDownload } = require('../../models');
+const { JobVideoDownload, Playlist } = require('../../models');
 const Channel = require('../../models/channel');
 const ChannelVideo = require('../../models/channelvideo');
 const PlaylistVideo = require('../../models/playlistvideo');
+const axios = require('axios');
 
 const flushPromises = () => new Promise((resolve) => queueMicrotask(resolve));
 
@@ -140,6 +154,9 @@ describe('videoDownloadPostProcessFiles', () => {
     Channel.findAll.mockResolvedValue([]);
     ChannelVideo.findAll.mockResolvedValue([]);
     PlaylistVideo.findOne.mockResolvedValue(null);
+    Playlist.findOne.mockResolvedValue(null);
+    Playlist.findAll.mockResolvedValue([]);
+    axios.get.mockResolvedValue({ data: Buffer.from('fake-image') });
     process.env.YOUTARR_JOB_ID = 'test-job-id';
     configModule.__setConfig({
       writeChannelPosters: false,
@@ -1285,6 +1302,131 @@ describe('videoDownloadPostProcessFiles', () => {
         newJsonPath,
         expect.stringContaining('"_actual_video_filepath": "/library/Channel/Season 01 - My Playlist/S01E001-Video Title.mp4"')
       );
+    });
+  });
+
+  describe('season poster and tvshow.nfo (playlist downloads)', () => {
+    const tempVideoPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4';
+    const tempJsonPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].info.json';
+
+    beforeEach(() => {
+      process.env.YOUTARR_PLAYLIST_NAME = 'My Playlist';
+      process.env.YOUTARR_SEASON_NUMBER = '1';
+      process.env.YOUTARR_PLAYLIST_ID = 'playlist42';
+      process.env.YOUTARR_SKIP_VIDEO_FOLDER = 'true';
+      process.argv = ['node', 'script', tempVideoPath];
+
+      tempPathManager.isEnabled.mockReturnValue(true);
+      tempPathManager.isTempPath.mockReturnValue(true);
+      tempPathManager.convertTempToFinal.mockImplementation((p) =>
+        p.replace('/tmp/youtarr-downloads', '/library')
+      );
+      PlaylistVideo.findOne.mockResolvedValue({ position: 1 });
+      Playlist.findOne.mockResolvedValue({ thumbnail: 'https://img.example.com/thumb.jpg' });
+      Playlist.findAll.mockResolvedValue([
+        { season_number: 1, title: 'My Playlist' },
+      ]);
+      Channel.findOne.mockResolvedValue({ title: 'Channel', description: 'A channel' });
+
+      fs.existsSync.mockImplementation((p) =>
+        p === tempJsonPath ||
+        p === '/library/Channel/Season 01 - My Playlist'
+      );
+      fs.readdir.mockResolvedValue(['Video Title [abc123].mp4', 'Video Title [abc123].jpg']);
+      fs.readdirSync.mockReturnValue([]);
+    });
+
+    afterEach(() => {
+      delete process.env.YOUTARR_PLAYLIST_NAME;
+      delete process.env.YOUTARR_SEASON_NUMBER;
+      delete process.env.YOUTARR_SKIP_VIDEO_FOLDER;
+      delete process.env.YOUTARR_PLAYLIST_ID;
+    });
+
+    it('copies season poster.jpg when writeSeasonPosters is true and thumbnail is available', async () => {
+      configModule.__setConfig({ writeSeasonPosters: true, writeChannelPosters: false, writeVideoNfoFiles: false });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(axios.get).toHaveBeenCalledWith('https://img.example.com/thumb.jpg', expect.objectContaining({ responseType: 'arraybuffer' }));
+      expect(fs.copySync).toHaveBeenCalledWith(
+        expect.stringContaining('playlistthumb-playlist42.jpg'),
+        '/library/Channel/Season 01 - My Playlist/poster.jpg'
+      );
+    });
+
+    it('skips season poster when writeSeasonPosters is false', async () => {
+      configModule.__setConfig({ writeSeasonPosters: false, writeChannelPosters: false, writeVideoNfoFiles: false });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(axios.get).not.toHaveBeenCalled();
+      const posterCopy = fs.copySync.mock.calls.find(([, dest]) => dest && dest.endsWith('poster.jpg'));
+      expect(posterCopy).toBeUndefined();
+    });
+
+    it('skips season poster when not a playlist download', async () => {
+      delete process.env.YOUTARR_PLAYLIST_ID;
+      delete process.env.YOUTARR_PLAYLIST_NAME;
+      delete process.env.YOUTARR_SEASON_NUMBER;
+      process.argv = ['node', 'script', '/library/Channel/Video Title [abc123].mp4'];
+      tempPathManager.isEnabled.mockReturnValue(false);
+      tempPathManager.isTempPath.mockReturnValue(false);
+      fs.existsSync.mockImplementation((p) => p.includes('.info.json'));
+      configModule.__setConfig({ writeSeasonPosters: true, writeChannelPosters: false, writeVideoNfoFiles: false });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('falls back to episode thumbnail when playlist thumbnail fetch fails', async () => {
+      axios.get.mockRejectedValueOnce(new Error('network error'));
+      fs.readdirSync.mockReturnValue(['S01E001-Video Title.jpg']);
+      configModule.__setConfig({ writeSeasonPosters: true, writeChannelPosters: false, writeVideoNfoFiles: false });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(fs.copySync).toHaveBeenCalledWith(
+        '/library/Channel/Season 01 - My Playlist/S01E001-Video Title.jpg',
+        '/library/Channel/Season 01 - My Playlist/poster.jpg'
+      );
+    });
+
+    it('writes tvshow.nfo when writeVideoNfoFiles is true and it is a playlist download', async () => {
+      configModule.__setConfig({ writeSeasonPosters: false, writeChannelPosters: false, writeVideoNfoFiles: true });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(nfoGenerator.writeShowNfoFile).toHaveBeenCalledWith(
+        '/library/Channel',
+        expect.objectContaining({ title: 'Channel' }),
+        [{ number: 1, title: 'My Playlist' }]
+      );
+    });
+
+    it('skips tvshow.nfo when writeVideoNfoFiles is false', async () => {
+      configModule.__setConfig({ writeSeasonPosters: false, writeChannelPosters: false, writeVideoNfoFiles: false });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
+    });
+
+    it('skips tvshow.nfo when no seasons exist in the database', async () => {
+      Playlist.findAll.mockResolvedValue([]);
+      configModule.__setConfig({ writeSeasonPosters: false, writeChannelPosters: false, writeVideoNfoFiles: true });
+
+      await loadModule();
+      await settleAsync();
+
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
     });
   });
 });

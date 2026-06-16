@@ -332,11 +332,18 @@ These fields work like the Jellyfin fields above, with `emby*` names. They're re
 - **Description**: Generate channel poster images for media servers
 - **Note**: Creates poster.jpg in each channel directory
 
+### Write Season Posters
+- **Config Key**: `writeSeasonPosters`
+- **Type**: `boolean`
+- **Default**: `true`
+- **Description**: Generate season poster images for Plex/Emby/Jellyfin playlist (TV-show) downloads
+- **Note**: Creates poster.jpg in each season subfolder using the playlist thumbnail (falls back to the first episode thumbnail; never falls back to the channel logo). Only applies to playlist downloads.
+
 ### Write Video NFO Files
 - **Config Key**: `writeVideoNfoFiles`
 - **Type**: `boolean`
 - **Default**: `true`
-- **Description**: Generate NFO metadata files for Kodi/Jellyfin/Emby
+- **Description**: Generate NFO metadata files for Kodi/Jellyfin/Emby. For playlist (TV-show) downloads this also writes a tvshow.nfo in the channel root folder with `<namedseason>` tags so Plex/Emby/Jellyfin display each season's playlist title instead of the generic "Season N" label.
 - **Note**: Creates .nfo XML files with video metadata
 
 ## Cookie Config

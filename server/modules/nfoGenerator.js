@@ -220,6 +220,34 @@ class NfoGenerator {
       return false;
     }
   }
+
+  writeShowNfoFile(channelFolderPath, channelData, seasons) {
+    const nfoPath = path.join(channelFolderPath, 'tvshow.nfo');
+    logger.info({ nfoPath, seasonCount: seasons.length }, 'Writing tvshow.nfo');
+    try {
+      let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+      xml += '<tvshow>\n';
+
+      if (channelData.title) {
+        xml += `  <title>${this.escapeXml(channelData.title)}</title>\n`;
+      }
+      if (channelData.description) {
+        xml += `  <plot>${this.escapeXml(channelData.description)}</plot>\n`;
+      }
+
+      for (const season of seasons) {
+        xml += `  <namedseason number="${season.number}">${this.escapeXml(season.title)}</namedseason>\n`;
+      }
+
+      xml += '</tvshow>\n';
+      fs.writeFileSync(nfoPath, xml, 'utf8');
+      logger.info({ nfoPath }, 'tvshow.nfo written successfully');
+      return true;
+    } catch (error) {
+      logger.error({ err: error, channelFolderPath }, 'Error writing tvshow.nfo');
+      return false;
+    }
+  }
 }
 
 module.exports = new NfoGenerator();
