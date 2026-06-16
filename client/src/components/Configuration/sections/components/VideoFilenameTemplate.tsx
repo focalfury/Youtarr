@@ -82,7 +82,16 @@ export const VideoFilenameTemplate: React.FC<VideoFilenameTemplateProps> = ({
         <span className="font-mono px-1 py-0.5 rounded text-xs bg-muted">
           - VIDEO_ID
         </span>{' '}
-        to folder names so it can re-find your videos on disk. Only applies to new downloads.{' '}
+        to folder names so it can re-find your videos on disk. Only applies to new, non-playlist
+        channel downloads &mdash; playlist downloads always use{' '}
+        <span className="font-mono px-1 py-0.5 rounded text-xs bg-muted">
+          Season ##
+        </span>{' '}
+        folders and{' '}
+        <span className="font-mono px-1 py-0.5 rounded text-xs bg-muted">
+          S##E##-Title
+        </span>{' '}
+        filenames for Plex TV-show compatibility.{' '}
         <Link
           href="https://github.com/yt-dlp/yt-dlp#output-template"
           target="_blank"
