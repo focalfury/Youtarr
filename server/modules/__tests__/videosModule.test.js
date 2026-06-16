@@ -46,7 +46,8 @@ describe('VideosModule', () => {
     mockConfigModule = {
       directoryPath: '/test/output/dir',
       getConfig: jest.fn().mockReturnValue({}),
-      updateConfig: jest.fn()
+      updateConfig: jest.fn(),
+      getJobsPath: jest.fn().mockReturnValue('/test/jobs')
     };
 
     mockVideoValidationModule = {
@@ -741,6 +742,120 @@ describe('VideosModule', () => {
     });
   });
 
+  describe('scanInfoJsonCache', () => {
+    test('fills a gap for a renamed video using _actual_video_filepath', async () => {
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'renamed123.info.json', isFile: () => true, isDirectory: () => false }
+      ]);
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({
+        _actual_video_filepath: '/test/output/dir/Channel/Season 01 - Playlist/S01E001-Title.mp4'
+      }));
+      mockFs.stat.mockResolvedValueOnce({ size: 4242 });
+
+      const fileMap = new Map();
+      await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(fileMap.get('renamed123')).toEqual({
+        videoFilePath: '/test/output/dir/Channel/Season 01 - Playlist/S01E001-Title.mp4',
+        videoFileSize: 4242,
+        audioFilePath: null,
+        audioFileSize: null
+      });
+    });
+
+    test('fills a gap using _actual_audio_filepath for audio-only downloads', async () => {
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'audio123.info.json', isFile: () => true, isDirectory: () => false }
+      ]);
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({
+        _actual_audio_filepath: '/test/output/dir/Channel/Song.mp3'
+      }));
+      mockFs.stat.mockResolvedValueOnce({ size: 999 });
+
+      const fileMap = new Map();
+      await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(fileMap.get('audio123')).toEqual({
+        videoFilePath: null,
+        videoFileSize: null,
+        audioFilePath: '/test/output/dir/Channel/Song.mp3',
+        audioFileSize: 999
+      });
+    });
+
+    test('does not overwrite an entry scanForVideoFiles already found', async () => {
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'existing123.info.json', isFile: () => true, isDirectory: () => false }
+      ]);
+
+      const fileMap = new Map();
+      fileMap.set('existing123', {
+        videoFilePath: '/already/found.mp4',
+        videoFileSize: 111,
+        audioFilePath: null,
+        audioFileSize: null
+      });
+
+      await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(fileMap.get('existing123').videoFilePath).toBe('/already/found.mp4');
+      expect(mockFs.readFile).not.toHaveBeenCalled();
+    });
+
+    test('skips a cached entry whose referenced file no longer exists on disk', async () => {
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'gone123.info.json', isFile: () => true, isDirectory: () => false }
+      ]);
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({
+        _actual_video_filepath: '/test/output/dir/Channel/Deleted.mp4'
+      }));
+      mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
+
+      const fileMap = new Map();
+      await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(fileMap.has('gone123')).toBe(false);
+    });
+
+    test('ignores non-info.json files in the cache directory', async () => {
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'README.txt', isFile: () => true, isDirectory: () => false }
+      ]);
+
+      const fileMap = new Map();
+      await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(fileMap.size).toBe(0);
+      expect(mockFs.readFile).not.toHaveBeenCalled();
+    });
+
+    test('returns the fileMap unchanged when the cache directory does not exist', async () => {
+      mockFs.readdir.mockRejectedValueOnce({ code: 'ENOENT' });
+
+      const fileMap = new Map();
+      const result = await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(result.size).toBe(0);
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
+
+    test('warns and continues when a cached info.json is corrupt', async () => {
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'corrupt123.info.json', isFile: () => true, isDirectory: () => false }
+      ]);
+      mockFs.readFile.mockResolvedValueOnce('not valid json');
+
+      const fileMap = new Map();
+      await VideosModule.scanInfoJsonCache(fileMap);
+
+      expect(fileMap.has('corrupt123')).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ youtubeId: 'corrupt123' }),
+        'Error reading cached info.json during backfill'
+      );
+    });
+  });
+
   describe('backfillVideoMetadata', () => {
     test('should backfill video metadata successfully', async () => {
       // Mock file system scan
@@ -773,6 +888,44 @@ describe('VideosModule', () => {
       expect(result.updated).toBe(1);
       expect(result.removed).toBe(0);
       expect(result.timeElapsed).toBeDefined();
+    });
+
+    test('does not mark a Plex-renamed playlist video as removed (no [videoId] in filename)', async () => {
+      // scanForVideoFiles finds nothing: the file is S01E001-Title.mp4, not [videoId].mp4
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'S01E001-Title.mp4', isDirectory: () => false, isFile: () => true }
+      ]);
+      // scanInfoJsonCache finds the durable cache entry for that same video
+      mockFs.readdir.mockResolvedValueOnce([
+        { name: 'playlist123.info.json', isFile: () => true, isDirectory: () => false }
+      ]);
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({
+        _actual_video_filepath: '/test/output/dir/Channel/Season 01 - Playlist/S01E001-Title.mp4'
+      }));
+      mockFs.stat.mockResolvedValueOnce({ size: 7777 });
+
+      mockVideo.count.mockResolvedValueOnce(1);
+      mockVideo.findAll.mockResolvedValueOnce([
+        {
+          id: 1,
+          youtubeId: 'playlist123',
+          filePath: '/test/output/dir/Channel/Playlist/playlist123 - video [playlist123].mp4',
+          fileSize: '7777',
+          removed: false
+        }
+      ]);
+      mockSequelize.query.mockResolvedValueOnce();
+
+      const result = await VideosModule.backfillVideoMetadata();
+
+      expect(result.removed).toBe(0);
+      expect(result.updated).toBe(1);
+      expect(mockSequelize.query).toHaveBeenCalledWith(
+        expect.stringContaining('filePath = ?'),
+        expect.objectContaining({
+          replacements: expect.arrayContaining(['/test/output/dir/Channel/Season 01 - Playlist/S01E001-Title.mp4'])
+        })
+      );
     });
 
     test('should respect time limit', async () => {

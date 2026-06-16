@@ -416,6 +416,84 @@ class VideosModule {
     return { fileMap, duplicates };
   }
 
+  // Fills gaps left by scanForVideoFiles for videos whose final filename no
+  // longer ends in [videoId].ext (e.g. Plex-renamed playlist episodes,
+  // S##E###-Title.ext) by reading the durable per-video info.json cache that
+  // videoDownloadPostProcessFiles.js keeps up to date with the final on-disk
+  // path. Only adds entries scanForVideoFiles didn't already find.
+  async scanInfoJsonCache(fileMap) {
+    const infoDir = path.join(configModule.getJobsPath(), 'info');
+
+    try {
+      const entries = await fs.readdir(infoDir, { withFileTypes: true });
+      if (!Array.isArray(entries)) {
+        return fileMap;
+      }
+
+      const statIfExists = async (filePath) => {
+        try {
+          return await fs.stat(filePath);
+        } catch (err) {
+          if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') {
+            logger.warn({ err, filePath }, 'Error checking cached file path during backfill');
+          }
+          return null;
+        }
+      };
+
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.info.json')) {
+          continue;
+        }
+
+        const youtubeId = entry.name.slice(0, -'.info.json'.length);
+        if (fileMap.has(youtubeId)) {
+          continue;
+        }
+
+        let jsonData;
+        try {
+          const content = await fs.readFile(path.join(infoDir, entry.name), 'utf8');
+          jsonData = JSON.parse(content);
+        } catch (err) {
+          logger.warn({ err, youtubeId }, 'Error reading cached info.json during backfill');
+          continue;
+        }
+
+        const fileInfo = { videoFilePath: null, videoFileSize: null, audioFilePath: null, audioFileSize: null };
+        let foundAny = false;
+
+        if (jsonData._actual_video_filepath) {
+          const stats = await statIfExists(jsonData._actual_video_filepath);
+          if (stats) {
+            fileInfo.videoFilePath = jsonData._actual_video_filepath;
+            fileInfo.videoFileSize = stats.size;
+            foundAny = true;
+          }
+        }
+
+        if (jsonData._actual_audio_filepath) {
+          const stats = await statIfExists(jsonData._actual_audio_filepath);
+          if (stats) {
+            fileInfo.audioFilePath = jsonData._actual_audio_filepath;
+            fileInfo.audioFileSize = stats.size;
+            foundAny = true;
+          }
+        }
+
+        if (foundAny) {
+          fileMap.set(youtubeId, fileInfo);
+        }
+      }
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        logger.error({ err, infoDir }, 'Error scanning info.json cache');
+      }
+    }
+
+    return fileMap;
+  }
+
   async backfillVideoMetadata(arg = {}) {
     const opts = typeof arg === 'number' ? { timeLimit: arg } : arg;
     const timeLimit = opts.timeLimit ?? 5 * 60 * 1000;
@@ -466,6 +544,7 @@ class VideosModule {
       // First, scan filesystem for all video files
       logProgress('Scanning filesystem for video files...');
       const { fileMap, duplicates } = await this.scanForVideoFiles(outputDir);
+      await this.scanInfoJsonCache(fileMap);
       fileMapSize = fileMap.size;
       logProgress(`Found ${fileMap.size} video files on disk`);
 
