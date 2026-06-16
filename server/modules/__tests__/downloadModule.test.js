@@ -1913,6 +1913,54 @@ describe('DownloadModule', () => {
         expect(freshPlaylist.update).toHaveBeenCalledWith({ channel_id: 'UCexisting', season_number: 2 });
       });
 
+      it('scopes the season lookup by playlist uploader when no video channel_id can be resolved', async () => {
+        // Regression test: YouTube's flat-playlist listing often omits per-video channel_id,
+        // which is only backfilled after a video is downloaded. Falling back to the playlist's
+        // own uploader (captured at sync time) avoids every such playlist colliding on season 1.
+        const freshPlaylist = {
+          playlist_id: 'PLbehindthescenes',
+          title: 'Behind the Scenes',
+          uploader: 'Some Channel',
+          season_number: null,
+          channel_id: null,
+          update: jest.fn().mockImplementation(async (patch) => {
+            Object.assign(freshPlaylist, patch);
+            return freshPlaylist;
+          }),
+        };
+        PlaylistVideoMock.findAll.mockResolvedValue([{ youtube_id: 'a', channel_id: null }]);
+        VideoMock.findOne.mockResolvedValue(null);
+        PlaylistMock.max.mockResolvedValue(1);
+        jest.spyOn(downloadModule, 'doSpecificDownloads').mockResolvedValue();
+
+        await downloadModule.doPlaylistDownloads(freshPlaylist);
+
+        expect(PlaylistMock.max).toHaveBeenCalledWith('season_number', { where: { uploader: 'Some Channel' } });
+        expect(freshPlaylist.update).toHaveBeenCalledWith({ channel_id: null, season_number: 2 });
+      });
+
+      it('queries by a null channel_id instead of skipping the lookup when neither uploader nor a resolvable channel_id is available', async () => {
+        const freshPlaylist = {
+          playlist_id: 'PLnouploader',
+          title: 'No Uploader Playlist',
+          season_number: null,
+          channel_id: null,
+          update: jest.fn().mockImplementation(async (patch) => {
+            Object.assign(freshPlaylist, patch);
+            return freshPlaylist;
+          }),
+        };
+        PlaylistVideoMock.findAll.mockResolvedValue([{ youtube_id: 'a', channel_id: null }]);
+        VideoMock.findOne.mockResolvedValue(null);
+        PlaylistMock.max.mockResolvedValue(null);
+        jest.spyOn(downloadModule, 'doSpecificDownloads').mockResolvedValue();
+
+        await downloadModule.doPlaylistDownloads(freshPlaylist);
+
+        expect(PlaylistMock.max).toHaveBeenCalledWith('season_number', { where: { channel_id: null } });
+        expect(freshPlaylist.update).toHaveBeenCalledWith({ channel_id: null, season_number: 1 });
+      });
+
       it('leaves season_number untouched and skips the max lookup on a playlist that already has one assigned', async () => {
         const freshPlaylist = {
           playlist_id: 'PLexisting',

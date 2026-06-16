@@ -759,9 +759,13 @@ class DownloadModule {
     // so a playlist keeps the same season folder across subsequent downloads.
     if (playlist.season_number == null) {
       const ownerChannelId = toDownload.find((e) => e.channel_id)?.channel_id || null;
-      const maxSeason = ownerChannelId
-        ? await Playlist.max('season_number', { where: { channel_id: ownerChannelId } })
-        : null;
+      // The per-video channel_id is frequently still null here -- YouTube's flat-playlist
+      // listing often omits it, and it's only backfilled after a video finishes downloading
+      // (see playlistModule.js). Scope the season lookup by the playlist's own uploader name
+      // instead: it's captured once when the playlist is added (well before any download)
+      // and is the same value used to build the on-disk channel/show folder.
+      const seasonScope = playlist.uploader ? { uploader: playlist.uploader } : { channel_id: ownerChannelId };
+      const maxSeason = await Playlist.max('season_number', { where: seasonScope });
       await playlist.update({ channel_id: ownerChannelId, season_number: (maxSeason || 0) + 1 });
     }
 
