@@ -16,9 +16,15 @@ const activeJobId = process.env.YOUTARR_JOB_ID;
 // Flat mode: skip video subfolder, files go directly in channel folder
 const isFlatMode = process.env.YOUTARR_SKIP_VIDEO_FOLDER === 'true';
 
-// Playlist subfolder support: inserts playlist name between channel folder and video folder
+// Playlist subfolder support: inserts playlist name (prefixed with the Plex season
+// number, when assigned) between channel folder and video folder
 const rawPlaylistName = process.env.YOUTARR_PLAYLIST_NAME || null;
-const playlistSubfolder = rawPlaylistName ? sanitizeNameLikeYtDlp(rawPlaylistName).substring(0, 80) : null;
+const seasonNumberEnv = process.env.YOUTARR_SEASON_NUMBER || null;
+const playlistSubfolder = rawPlaylistName
+  ? (seasonNumberEnv
+    ? `Season ${String(seasonNumberEnv).padStart(2, '0')} - ${sanitizeNameLikeYtDlp(rawPlaylistName).substring(0, 80)}`
+    : sanitizeNameLikeYtDlp(rawPlaylistName).substring(0, 80))
+  : null;
 
 const videoPath = process.argv[2]; // get the media file path (video or audio)
 const parsedPath = path.parse(videoPath);
@@ -221,6 +227,36 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
     const id = matches
       ? matches[matches.length - 1].replace(/[[\]]/g, '')
       : 'default'; // take the last match and remove brackets or use 'default'
+
+    // Plex TV-show organization: rename to S##E###-Title (drop channel name + [id]),
+    // using the video's playlist position as the episode number. Looked up by
+    // playlist_id + youtube_id since a video can belong to more than one playlist
+    // (playlistvideos_playlist_youtube_uq is unique on the pair, not youtube_id alone).
+    let playlistRenameStem = null;
+    const playlistIdEnv = process.env.YOUTARR_PLAYLIST_ID || null;
+    if (playlistSubfolder && playlistIdEnv && seasonNumberEnv) {
+      try {
+        const PlaylistVideo = require('../models/playlistvideo');
+        const pv = await PlaylistVideo.findOne({
+          where: { playlist_id: playlistIdEnv, youtube_id: id },
+          attributes: ['position'],
+        });
+        if (pv) {
+          const season = String(seasonNumberEnv).padStart(2, '0');
+          const episode = String(pv.position).padStart(3, '0');
+          const cleanTitle = sanitizeNameLikeYtDlp(jsonData.title || 'Untitled').substring(0, 150);
+          playlistRenameStem = `S${season}E${episode}-${cleanTitle}`;
+        }
+      } catch (err) {
+        logger.warn({ err, id }, 'Post-process: failed to resolve playlist episode number; keeping default filename');
+      }
+    }
+
+    const baseVideoFileName = path.basename(videoPath);
+    const renamedVideoFileName = playlistRenameStem
+      ? playlistRenameStem + baseVideoFileName.slice(parsedPath.name.length)
+      : baseVideoFileName;
+
     const directoryPath = path.join(configModule.getJobsPath(), 'info');
     const newImagePath = configModule.getImagePath();
 
@@ -356,7 +392,7 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
 
     if (targetChannelFolder) {
       // Channel has subfolder - calculate path with subfolder (and optional playlist folder) included
-      const videoFileName = path.basename(videoPath);
+      const videoFileName = renamedVideoFileName;
       const playlistBase = playlistSubfolder ? path.join(targetChannelFolder, playlistSubfolder) : targetChannelFolder;
       if (isFlatMode) {
         finalVideoPathForJson = path.join(playlistBase, videoFileName);
@@ -367,7 +403,7 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
     } else if (playlistSubfolder) {
       // No channel subfolder but playlist context: insert playlist name under channel folder
       const standardFinalPath = tempPathManager.convertTempToFinal(videoPath);
-      const videoFileName = path.basename(videoPath);
+      const videoFileName = renamedVideoFileName;
       if (isFlatMode) {
         const channelFolder = path.dirname(standardFinalPath);
         finalVideoPathForJson = path.join(channelFolder, playlistSubfolder, videoFileName);
@@ -566,7 +602,7 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
 
       // Calculate target video directory based on subfolder setting
       const videoDirectoryName = path.basename(videoDirectory);
-      const videoFileName = path.basename(videoPath);
+      const videoFileName = renamedVideoFileName;
       let targetVideoDirectory;
       let targetChannelFolderForMove;
 
@@ -636,7 +672,12 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
           );
           for (const file of updatedFilesInDir) {
             const srcPath = path.join(videoDirectory, file);
-            const destPath = path.join(targetVideoDirectory, file);
+            // Plex TV-show organization: rename sidecar files (poster, srt, nfo, etc.)
+            // that share the video's stem the same way as the primary video file.
+            const destFileName = (playlistRenameStem && file.startsWith(parsedPath.name))
+              ? playlistRenameStem + file.slice(parsedPath.name.length)
+              : file;
+            const destPath = path.join(targetVideoDirectory, destFileName);
             // Overwrite if the file already exists at destination
             if (await fs.pathExists(destPath)) {
               logger.warn({ destPath }, '[Post-Process] Target file already exists, overwriting');
@@ -717,11 +758,10 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
     try {
       // Handle dual-format downloads (video_mp3 mode): track both video and audio paths
       if (isAudioFile && companionVideoPath) {
-        // Calculate final path for companion video (same directory as the audio file)
-        const finalCompanionVideoPath = path.join(
-          path.dirname(finalVideoPath),
-          path.basename(companionVideoPath)
-        );
+        // Calculate final path for companion video (same directory as the audio file).
+        // Use the renamed stem so the JSON metadata matches the file actually moved above.
+        const companionFileName = playlistRenameStem ? `${playlistRenameStem}.mp4` : path.basename(companionVideoPath);
+        const finalCompanionVideoPath = path.join(path.dirname(finalVideoPath), companionFileName);
 
         // Store both paths for videoMetadataProcessor
         jsonData._actual_video_filepath = finalCompanionVideoPath;

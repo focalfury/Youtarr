@@ -72,8 +72,13 @@ const mockChannelVideo = {
   findAll: jest.fn(() => Promise.resolve([]))
 };
 
+const mockPlaylistVideo = {
+  findOne: jest.fn(() => Promise.resolve(null))
+};
+
 jest.mock('../../models/channel', () => mockChannel);
 jest.mock('../../models/channelvideo', () => mockChannelVideo);
+jest.mock('../../models/playlistvideo', () => mockPlaylistVideo);
 
 jest.mock('../../models', () => ({
   JobVideoDownload: mockJobVideoDownload,
@@ -107,6 +112,7 @@ const tempPathManager = require('../download/tempPathManager');
 const { JobVideoDownload } = require('../../models');
 const Channel = require('../../models/channel');
 const ChannelVideo = require('../../models/channelvideo');
+const PlaylistVideo = require('../../models/playlistvideo');
 
 const flushPromises = () => new Promise((resolve) => queueMicrotask(resolve));
 
@@ -133,6 +139,7 @@ describe('videoDownloadPostProcessFiles', () => {
     Channel.findOne.mockResolvedValue(null);
     Channel.findAll.mockResolvedValue([]);
     ChannelVideo.findAll.mockResolvedValue([]);
+    PlaylistVideo.findOne.mockResolvedValue(null);
     process.env.YOUTARR_JOB_ID = 'test-job-id';
     configModule.__setConfig({
       writeChannelPosters: false,
@@ -1144,6 +1151,139 @@ describe('videoDownloadPostProcessFiles', () => {
       expect(fs.writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining('/library/Test Channel/Video Title [abc123]/Video Title [abc123].info.json'),
         expect.stringContaining('"_actual_filepath": "/library/__Music/Test Channel/Video Title [abc123]/Video Title [abc123].mp4"')
+      );
+    });
+  });
+
+  describe('Plex TV-show organization (season folder + S##E### rename)', () => {
+    afterEach(() => {
+      delete process.env.YOUTARR_PLAYLIST_NAME;
+      delete process.env.YOUTARR_SEASON_NUMBER;
+      delete process.env.YOUTARR_SKIP_VIDEO_FOLDER;
+      delete process.env.YOUTARR_PLAYLIST_ID;
+    });
+
+    it('prefixes the playlist folder with the zero-padded season number', async () => {
+      process.env.YOUTARR_PLAYLIST_NAME = 'My Playlist';
+      process.env.YOUTARR_SEASON_NUMBER = '1';
+      process.env.YOUTARR_SKIP_VIDEO_FOLDER = 'true';
+      // No YOUTARR_PLAYLIST_ID: isolates the folder-prefix behavior from renaming.
+
+      const tempVideoPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4';
+      process.argv = ['node', 'script', tempVideoPath];
+
+      tempPathManager.isEnabled.mockReturnValue(true);
+      tempPathManager.isTempPath.mockReturnValue(true);
+      tempPathManager.convertTempToFinal.mockImplementation((p) => p.replace('/tmp/youtarr-downloads', '/library'));
+
+      const tempJsonPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].info.json';
+      fs.existsSync.mockImplementation((p) => p === tempJsonPath || p.includes('/library/Channel/Season 01 - My Playlist'));
+      fs.pathExists.mockResolvedValue(false);
+      fs.readdir.mockResolvedValue(['Video Title [abc123].mp4']);
+
+      await loadModule();
+      await settleAsync();
+
+      expect(fs.move).toHaveBeenCalledWith(
+        '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4',
+        '/library/Channel/Season 01 - My Playlist/Video Title [abc123].mp4'
+      );
+    });
+
+    it('renames the video file and its sidecar files to S##E###-Title', async () => {
+      process.env.YOUTARR_PLAYLIST_NAME = 'My Playlist';
+      process.env.YOUTARR_SEASON_NUMBER = '1';
+      process.env.YOUTARR_SKIP_VIDEO_FOLDER = 'true';
+      process.env.YOUTARR_PLAYLIST_ID = '42';
+      PlaylistVideo.findOne.mockResolvedValue({ position: 1 });
+
+      const tempVideoPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4';
+      process.argv = ['node', 'script', tempVideoPath];
+
+      tempPathManager.isEnabled.mockReturnValue(true);
+      tempPathManager.isTempPath.mockReturnValue(true);
+      tempPathManager.convertTempToFinal.mockImplementation((p) => p.replace('/tmp/youtarr-downloads', '/library'));
+
+      const tempJsonPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].info.json';
+      fs.existsSync.mockImplementation((p) => p === tempJsonPath || p.includes('/library/Channel/Season 01 - My Playlist'));
+      fs.pathExists.mockResolvedValue(false);
+      fs.readdir.mockResolvedValue(['Video Title [abc123].mp4', 'Video Title [abc123].jpg']);
+
+      await loadModule();
+      await settleAsync();
+
+      expect(PlaylistVideo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { playlist_id: '42', youtube_id: 'abc123' } })
+      );
+      expect(fs.move).toHaveBeenCalledWith(
+        '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4',
+        '/library/Channel/Season 01 - My Playlist/S01E001-Video Title.mp4'
+      );
+      expect(fs.move).toHaveBeenCalledWith(
+        '/tmp/youtarr-downloads/Channel/Video Title [abc123].jpg',
+        '/library/Channel/Season 01 - My Playlist/S01E001-Video Title.jpg'
+      );
+    });
+
+    it('falls back to the original filename when the PlaylistVideo lookup misses', async () => {
+      process.env.YOUTARR_PLAYLIST_NAME = 'My Playlist';
+      process.env.YOUTARR_SEASON_NUMBER = '1';
+      process.env.YOUTARR_SKIP_VIDEO_FOLDER = 'true';
+      process.env.YOUTARR_PLAYLIST_ID = '42';
+      PlaylistVideo.findOne.mockResolvedValue(null);
+
+      const tempVideoPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4';
+      process.argv = ['node', 'script', tempVideoPath];
+
+      tempPathManager.isEnabled.mockReturnValue(true);
+      tempPathManager.isTempPath.mockReturnValue(true);
+      tempPathManager.convertTempToFinal.mockImplementation((p) => p.replace('/tmp/youtarr-downloads', '/library'));
+
+      const tempJsonPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].info.json';
+      fs.existsSync.mockImplementation((p) => p === tempJsonPath || p.includes('/library/Channel/Season 01 - My Playlist'));
+      fs.pathExists.mockResolvedValue(false);
+      fs.readdir.mockResolvedValue(['Video Title [abc123].mp4']);
+
+      await loadModule();
+      await settleAsync();
+
+      expect(fs.move).toHaveBeenCalledWith(
+        '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp4',
+        '/library/Channel/Season 01 - My Playlist/Video Title [abc123].mp4'
+      );
+    });
+
+    it('uses the renamed stem for the video_mp3 companion path', async () => {
+      process.env.YOUTARR_PLAYLIST_NAME = 'My Playlist';
+      process.env.YOUTARR_SEASON_NUMBER = '1';
+      process.env.YOUTARR_SKIP_VIDEO_FOLDER = 'true';
+      process.env.YOUTARR_PLAYLIST_ID = '42';
+      PlaylistVideo.findOne.mockResolvedValue({ position: 1 });
+
+      // video_mp3 mode: yt-dlp's --exec hook fires for the .mp3 file, with a same-stem
+      // .mp4 companion left on disk alongside it.
+      const tempVideoPath = '/tmp/youtarr-downloads/Channel/Video Title [abc123].mp3';
+      process.argv = ['node', 'script', tempVideoPath];
+
+      tempPathManager.isEnabled.mockReturnValue(true);
+      tempPathManager.isTempPath.mockReturnValue(true);
+      tempPathManager.convertTempToFinal.mockImplementation((p) => p.replace('/tmp/youtarr-downloads', '/library'));
+
+      fs.existsSync.mockImplementation(() => true);
+      fs.pathExists.mockResolvedValue(false);
+      fs.readdir.mockResolvedValue([
+        'Video Title [abc123].mp3',
+        'Video Title [abc123].mp4',
+        'Video Title [abc123].jpg'
+      ]);
+
+      await loadModule();
+      await settleAsync();
+
+      const newJsonPath = '/mock/jobs/info/abc123.info.json';
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        newJsonPath,
+        expect.stringContaining('"_actual_video_filepath": "/library/Channel/Season 01 - My Playlist/S01E001-Video Title.mp4"')
       );
     });
   });

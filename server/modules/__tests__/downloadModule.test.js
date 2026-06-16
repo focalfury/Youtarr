@@ -967,7 +967,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=abc123', 'https://youtube.com/watch?v=def456'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -998,7 +998,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=xyz789'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1024,7 +1024,7 @@ describe('DownloadModule', () => {
         ['-abc123', 'https://youtube.com/watch?v=def456'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1146,7 +1146,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test1', 'https://youtube.com/watch?v=test2'],
         true,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
       // Verify that --download-archive is NOT in the arguments when allowRedownload is true
       const callArgs = mockDownloadExecutor.doDownload.mock.calls[0][0];
@@ -1181,7 +1181,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1210,7 +1210,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=default'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1238,7 +1238,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: 'Movies', subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: 'Movies', subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1264,7 +1264,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1289,7 +1289,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: '', subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: '', subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1315,7 +1315,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: true, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: true, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1341,7 +1341,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: true, ownerChannelId: 'UC123456', ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: true, ownerChannelId: 'UC123456', ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1370,7 +1370,7 @@ describe('DownloadModule', () => {
         ['https://youtube.com/watch?v=test'],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: 'UC123456', ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: 'UC123456', ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
 
@@ -1428,29 +1428,38 @@ describe('DownloadModule', () => {
         [],
         false,
         false,
-        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null }
+        { subfolderOverride: null, subfolderFallback: null, ratingOverride: undefined, ratingFallback: null, skipVideoFolder: false, ownerChannelId: null, ownerChannelMap: null, playlistName: null, playlistId: null, playlistSeasonNumber: null }
       );
     });
   });
 
   describe('doPlaylistDownloads', () => {
     let PlaylistVideoMock;
+    let PlaylistMock;
     let VideoMock;
     let ChannelMock;
     let playlistModuleMock;
     let grouperMock;
 
+    // season_number/channel_id are already assigned so the shared mockPlaylist
+    // never triggers the lazy season-assignment path (see dedicated tests below).
     const mockPlaylist = {
       playlist_id: 'PLtest123',
       title: 'Test Playlist',
       video_quality: null,
       audio_format: null,
       default_sub_folder: null,
+      channel_id: 'UCexisting',
+      season_number: 1,
+      update: jest.fn().mockResolvedValue({}),
     };
 
     beforeEach(() => {
       jest.doMock('../../models/playlistvideo', () => ({
         findAll: jest.fn(),
+      }));
+      jest.doMock('../../models/playlist', () => ({
+        max: jest.fn(),
       }));
       jest.doMock('../../models/video', () => ({
         findOne: jest.fn(),
@@ -1466,6 +1475,7 @@ describe('DownloadModule', () => {
       jest.doMock('../playlistDownloadGrouper', () => ({ buildGroups: jest.fn() }));
 
       PlaylistVideoMock = require('../../models/playlistvideo');
+      PlaylistMock = require('../../models/playlist');
       VideoMock = require('../../models/video');
       ChannelMock = require('../../models/channel');
       playlistModuleMock = require('../playlistModule');
@@ -1838,6 +1848,91 @@ describe('DownloadModule', () => {
       const callArgs = PlaylistVideoMock.findAll.mock.calls[0][0];
       expect(callArgs.limit).toBeUndefined();
       expect(playlistModuleMock.fetchAllPlaylistVideos).not.toHaveBeenCalled();
+    });
+
+    describe('Plex TV-show organization (season number + forced flat mode)', () => {
+      it('forces skipVideoFolder: true on the overrideSettings passed to buildGroups, even when the caller set it false', async () => {
+        PlaylistVideoMock.findAll.mockResolvedValue([{ youtube_id: 'a', channel_id: 'UC1' }]);
+        VideoMock.findOne.mockResolvedValue(null);
+        ChannelMock.findOne.mockResolvedValue({ channel_id: 'UC1' });
+        jest.spyOn(downloadModule, 'doSpecificDownloads').mockResolvedValue();
+
+        await downloadModule.doPlaylistDownloads(mockPlaylist, { overrideSettings: { skipVideoFolder: false } });
+
+        expect(grouperMock.buildGroups).toHaveBeenCalledWith(
+          mockPlaylist,
+          expect.any(Array),
+          expect.objectContaining({ skipVideoFolder: true })
+        );
+      });
+
+      it('assigns season_number 1 and the owner channel_id on first download of a playlist with no existing season', async () => {
+        const freshPlaylist = {
+          playlist_id: 'PLnew',
+          title: 'New Playlist',
+          season_number: null,
+          channel_id: null,
+          update: jest.fn().mockImplementation(async (patch) => {
+            Object.assign(freshPlaylist, patch);
+            return freshPlaylist;
+          }),
+        };
+        PlaylistVideoMock.findAll.mockResolvedValue([{ youtube_id: 'a', channel_id: 'UCnew' }]);
+        VideoMock.findOne.mockResolvedValue(null);
+        ChannelMock.findOne.mockResolvedValue({ channel_id: 'UCnew' });
+        PlaylistMock.max.mockResolvedValue(null);
+        const spy = jest.spyOn(downloadModule, 'doSpecificDownloads').mockResolvedValue();
+
+        await downloadModule.doPlaylistDownloads(freshPlaylist);
+
+        expect(PlaylistMock.max).toHaveBeenCalledWith('season_number', { where: { channel_id: 'UCnew' } });
+        expect(freshPlaylist.update).toHaveBeenCalledWith({ channel_id: 'UCnew', season_number: 1 });
+        expect(spy.mock.calls[0][0].body.playlistId).toBe('PLnew');
+        expect(spy.mock.calls[0][0].body.playlistSeasonNumber).toBe(1);
+      });
+
+      it('increments season_number from the max existing season already assigned on the owning channel', async () => {
+        const freshPlaylist = {
+          playlist_id: 'PLsecond',
+          title: 'Second Playlist',
+          season_number: null,
+          channel_id: null,
+          update: jest.fn().mockImplementation(async (patch) => {
+            Object.assign(freshPlaylist, patch);
+            return freshPlaylist;
+          }),
+        };
+        PlaylistVideoMock.findAll.mockResolvedValue([{ youtube_id: 'b', channel_id: 'UCexisting' }]);
+        VideoMock.findOne.mockResolvedValue(null);
+        ChannelMock.findOne.mockResolvedValue({ channel_id: 'UCexisting' });
+        PlaylistMock.max.mockResolvedValue(1);
+        jest.spyOn(downloadModule, 'doSpecificDownloads').mockResolvedValue();
+
+        await downloadModule.doPlaylistDownloads(freshPlaylist);
+
+        expect(freshPlaylist.update).toHaveBeenCalledWith({ channel_id: 'UCexisting', season_number: 2 });
+      });
+
+      it('leaves season_number untouched and skips the max lookup on a playlist that already has one assigned', async () => {
+        const freshPlaylist = {
+          playlist_id: 'PLexisting',
+          title: 'Existing Playlist',
+          season_number: 3,
+          channel_id: 'UCexisting',
+          update: jest.fn(),
+        };
+        PlaylistVideoMock.findAll.mockResolvedValue([{ youtube_id: 'c', channel_id: 'UCexisting' }]);
+        VideoMock.findOne.mockResolvedValue(null);
+        ChannelMock.findOne.mockResolvedValue({ channel_id: 'UCexisting' });
+        const spy = jest.spyOn(downloadModule, 'doSpecificDownloads').mockResolvedValue();
+
+        await downloadModule.doPlaylistDownloads(freshPlaylist);
+
+        expect(freshPlaylist.update).not.toHaveBeenCalled();
+        expect(PlaylistMock.max).not.toHaveBeenCalled();
+        expect(spy.mock.calls[0][0].body.playlistId).toBe('PLexisting');
+        expect(spy.mock.calls[0][0].body.playlistSeasonNumber).toBe(3);
+      });
     });
   });
 

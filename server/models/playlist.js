@@ -31,6 +31,10 @@ Playlist.init(
     audio_format: { type: DataTypes.STRING, allowNull: true },
     default_rating: { type: DataTypes.STRING, allowNull: true },
     lastFetched: { type: DataTypes.DATE, allowNull: true },
+    // Owning channel + Plex season number, assigned lazily on first download
+    // (see downloadModule.doPlaylistDownloads) for Plex TV-show organization.
+    channel_id: { type: DataTypes.STRING, allowNull: true },
+    season_number: { type: DataTypes.INTEGER, allowNull: true },
   },
   { sequelize, modelName: 'Playlist', tableName: 'playlists', timestamps: true }
 );

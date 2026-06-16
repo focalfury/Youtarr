@@ -665,6 +665,9 @@ class DownloadModule {
           ownerChannelMap: this.getJobDataValue(jobData, 'ownerChannelMap') || null,
           // Playlist subfolder support: routes video into Channel/Playlist/Video structure
           playlistName: this.getJobDataValue(jobData, 'playlistName') || null,
+          // Plex TV-show organization: season-prefixed folder + S##E### filename rename
+          playlistId: this.getJobDataValue(jobData, 'playlistId') || null,
+          playlistSeasonNumber: this.getJobDataValue(jobData, 'playlistSeasonNumber') || null,
         }
       );
     }
@@ -672,16 +675,17 @@ class DownloadModule {
 
   async doPlaylistDownloads(playlist, options = {}) {
     const PlaylistVideo = require('../models/playlistvideo');
+    const Playlist = require('../models/playlist');
     const Video = require('../models/video');
     const Channel = require('../models/channel');
     const playlistModule = require('./playlistModule');
     const playlistDownloadGrouper = require('./playlistDownloadGrouper');
     const downloadSettingsResolver = require('./download/downloadSettingsResolver');
 
-    const overrideSettings =
-      options.overrideSettings && typeof options.overrideSettings === 'object'
-        ? options.overrideSettings
-        : {};
+    const overrideSettings = {
+      ...(options.overrideSettings && typeof options.overrideSettings === 'object' ? options.overrideSettings : {}),
+      skipVideoFolder: true, // Playlist downloads always flatten into the playlist/season folder (Plex TV-show structure)
+    };
     const allowRedownload = !!overrideSettings.allowRedownload;
 
     const youtubeIds = Array.isArray(options.youtubeIds) ? options.youtubeIds : [];
@@ -750,6 +754,17 @@ class DownloadModule {
 
     if (!toDownload.length) return;
 
+    // Plex TV-show organization: assign this playlist's season number (scoped to its
+    // owning channel) once, the first time it's downloaded. Never reassigned afterward,
+    // so a playlist keeps the same season folder across subsequent downloads.
+    if (playlist.season_number == null) {
+      const ownerChannelId = toDownload.find((e) => e.channel_id)?.channel_id || null;
+      const maxSeason = ownerChannelId
+        ? await Playlist.max('season_number', { where: { channel_id: ownerChannelId } })
+        : null;
+      await playlist.update({ channel_id: ownerChannelId, season_number: (maxSeason || 0) + 1 });
+    }
+
     const groups = await playlistDownloadGrouper.buildGroups(playlist, toDownload, overrideSettings);
     const jobLabel = playlistJobLabel(playlist);
 
@@ -780,7 +795,7 @@ class DownloadModule {
       if (routing.ratingFallback !== undefined) groupOverride.ratingFallback = routing.ratingFallback;
       // doSpecificDownloads accepts an Express-request shape (.body). runId ties
       // these jobs into the parent run so its summary aggregates them.
-      await this.doSpecificDownloads({ body: { urls, overrideSettings: groupOverride, jobLabel, runId: options.runId, ownerChannelMap, playlistName: playlist.title } });
+      await this.doSpecificDownloads({ body: { urls, overrideSettings: groupOverride, jobLabel, runId: options.runId, ownerChannelMap, playlistName: playlist.title, playlistId: playlist.playlist_id, playlistSeasonNumber: playlist.season_number } });
     }
   }
 

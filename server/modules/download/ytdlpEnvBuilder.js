@@ -17,6 +17,8 @@ function buildYtdlpEnv({ jobId, tempBasePath, postProcessDirectives, baseEnv = p
     ownerChannelId = null,
     ownerChannelMap = null,
     playlistName = null,
+    playlistId = null,
+    playlistSeasonNumber = null,
   } = postProcessDirectives || {};
 
   const env = {
@@ -56,6 +58,15 @@ function buildYtdlpEnv({ jobId, tempBasePath, postProcessDirectives, baseEnv = p
   // Playlist subfolder support: post-processor inserts this as a directory between channel and video folder
   if (playlistName !== null && playlistName !== undefined && String(playlistName).trim() !== '') {
     env.YOUTARR_PLAYLIST_NAME = String(playlistName).trim();
+  }
+
+  // Plex TV-show organization: lets the post-processor look up the video's episode
+  // position (playlistId) and build the Season ## folder / S##E### filename prefix
+  if (playlistId !== null && playlistId !== undefined && String(playlistId).trim() !== '') {
+    env.YOUTARR_PLAYLIST_ID = String(playlistId).trim();
+  }
+  if (playlistSeasonNumber !== null && playlistSeasonNumber !== undefined && String(playlistSeasonNumber).trim() !== '') {
+    env.YOUTARR_SEASON_NUMBER = String(playlistSeasonNumber).trim();
   }
 
   // The post-processor looks up its own youtube_id, so a superset map is fine

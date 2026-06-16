@@ -240,6 +240,60 @@ describe('playlistName', () => {
   });
 });
 
+describe('playlistId', () => {
+  test('sets YOUTARR_PLAYLIST_ID and trims whitespace', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistId: '  PL123  ' } });
+    expect(env.YOUTARR_PLAYLIST_ID).toBe('PL123');
+  });
+
+  test('omits YOUTARR_PLAYLIST_ID when null', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistId: null } });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_ID');
+  });
+
+  test('omits YOUTARR_PLAYLIST_ID when empty string', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistId: '' } });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_ID');
+  });
+
+  test('omits YOUTARR_PLAYLIST_ID when whitespace-only', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistId: '   ' } });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_ID');
+  });
+
+  test('does not set YOUTARR_PLAYLIST_ID when no directives given', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {} });
+    expect(env).not.toHaveProperty('YOUTARR_PLAYLIST_ID');
+  });
+});
+
+describe('playlistSeasonNumber', () => {
+  test('sets YOUTARR_SEASON_NUMBER and trims whitespace', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistSeasonNumber: 1 } });
+    expect(env.YOUTARR_SEASON_NUMBER).toBe('1');
+  });
+
+  test('omits YOUTARR_SEASON_NUMBER when null', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistSeasonNumber: null } });
+    expect(env).not.toHaveProperty('YOUTARR_SEASON_NUMBER');
+  });
+
+  test('omits YOUTARR_SEASON_NUMBER when empty string', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistSeasonNumber: '' } });
+    expect(env).not.toHaveProperty('YOUTARR_SEASON_NUMBER');
+  });
+
+  test('omits YOUTARR_SEASON_NUMBER when whitespace-only', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: { playlistSeasonNumber: '   ' } });
+    expect(env).not.toHaveProperty('YOUTARR_SEASON_NUMBER');
+  });
+
+  test('does not set YOUTARR_SEASON_NUMBER when no directives given', () => {
+    const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {} });
+    expect(env).not.toHaveProperty('YOUTARR_SEASON_NUMBER');
+  });
+});
+
 describe('postProcessDirectives edge cases', () => {
   test('tolerates undefined postProcessDirectives and still builds baseline env', () => {
     const env = buildYtdlpEnv({ ...BASE_ARGS, baseEnv: {}, postProcessDirectives: undefined });

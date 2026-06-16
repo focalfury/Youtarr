@@ -30,7 +30,7 @@ Youtarr uses MariaDB/MySQL for storing:
 | `JobVideoDownloads`| `JobVideoDownload`| Download progress tracking        |
 | `Sessions`         | `Session`         | User authentication sessions      |
 | `ApiKeys`          | `ApiKey`          | API key credentials for external integrations (bookmarklets, shortcuts, automation) |
-| `playlists`        | `Playlist`        | Subscribed YouTube playlists with per-playlist sync targets and seeded settings |
+| `playlists`        | `Playlist`        | Subscribed YouTube playlists with per-playlist sync targets and seeded settings. `channel_id` and `season_number` are assigned lazily on first download (Plex TV-show folder structure: `Season ##` per playlist, scoped per channel) and left `NULL` until then |
 | `playlistvideos`   | `PlaylistVideo`   | One row per (playlist, video) with the YouTube playlist position |
 | `playlist_sync_state` | `PlaylistSyncState` | Per-(playlist, server) sync state: server playlist id, last_synced_at, last_error |
 | `SequelizeMeta`    | NA                | Sequelize ORM migration tracking  |
