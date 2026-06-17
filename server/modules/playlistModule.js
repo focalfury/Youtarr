@@ -398,14 +398,22 @@ class PlaylistModule {
     if (!outputDir || !fs.existsSync(outputDir)) return;
 
     for (const playlist of playlists) {
-      if (playlist.season_number == null || !playlist.channel_id) continue;
+      if (playlist.season_number == null) continue;
+      if (!playlist.channel_id && !playlist.uploader) continue;
       try {
-        const channel = await Channel.findOne({
-          where: { channel_id: playlist.channel_id },
-          attributes: ['folder_name', 'uploader'],
-        });
-        if (!channel) continue;
-        const channelFolderName = channel.folder_name || channel.uploader;
+        // channel_id is often null (lazy-assigned, frequently still null at download time).
+        // Fall back to uploader — same scoping strategy as downloadModule.doPlaylistDownloads.
+        let channelFolderName;
+        if (playlist.channel_id) {
+          const channel = await Channel.findOne({
+            where: { channel_id: playlist.channel_id },
+            attributes: ['folder_name', 'uploader'],
+          });
+          if (channel) channelFolderName = channel.folder_name || channel.uploader;
+        }
+        if (!channelFolderName && playlist.uploader) {
+          channelFolderName = sanitizeNameLikeYtDlp(playlist.uploader);
+        }
         if (!channelFolderName) continue;
 
         const seasonPrefix = `Season ${String(playlist.season_number).padStart(2, '0')} - `;
@@ -457,30 +465,46 @@ class PlaylistModule {
     const outputDir = configModule.directoryPath;
     if (!outputDir || !fs.existsSync(outputDir)) return;
 
-    // Group playlists by channel_id, only for those with season_number assigned
-    const byChannel = new Map();
+    // Group by channel_id when available, otherwise by uploader (channel_id is often
+    // null — lazy-assigned, frequently still null at download time; same scoping
+    // strategy as downloadModule.doPlaylistDownloads).
+    const byGroup = new Map();
     for (const p of playlists) {
-      if (p.season_number == null || !p.channel_id) continue;
-      if (!byChannel.has(p.channel_id)) byChannel.set(p.channel_id, []);
-      byChannel.get(p.channel_id).push(p);
+      if (p.season_number == null) continue;
+      const key = p.channel_id || (p.uploader ? `uploader:${p.uploader}` : null);
+      if (!key) continue;
+      if (!byGroup.has(key)) byGroup.set(key, p);
     }
 
-    for (const [channelId] of byChannel) {
+    for (const [groupKey, repPlaylist] of byGroup) {
       try {
-        const channel = await Channel.findOne({
-          where: { channel_id: channelId },
-          attributes: ['folder_name', 'uploader', 'title', 'description'],
-        });
-        if (!channel) continue;
-        const channelFolderName = channel.folder_name || channel.uploader;
-        if (!channelFolderName) continue;
+        let channelFolderName;
+        let channelData = {};
+        let nfoScope;
+
+        if (repPlaylist.channel_id) {
+          const channel = await Channel.findOne({
+            where: { channel_id: repPlaylist.channel_id },
+            attributes: ['folder_name', 'uploader', 'title', 'description'],
+          });
+          if (channel) {
+            channelFolderName = channel.folder_name || channel.uploader;
+            channelData = channel;
+          }
+          nfoScope = { channel_id: repPlaylist.channel_id };
+        }
+        if (!channelFolderName && repPlaylist.uploader) {
+          channelFolderName = sanitizeNameLikeYtDlp(repPlaylist.uploader);
+          nfoScope = { uploader: repPlaylist.uploader };
+        }
+        if (!channelFolderName || !nfoScope) continue;
 
         const channelFolderPath = path.join(outputDir, channelFolderName);
         if (!fs.existsSync(channelFolderPath)) continue;
 
-        // Fetch the full ordered season list for this channel (not just the page subset)
+        // Fetch the full ordered season list for this group (not just the page subset)
         const allPlaylists = await Playlist.findAll({
-          where: { channel_id: channelId },
+          where: nfoScope,
           order: [['season_number', 'ASC']],
           attributes: ['season_number', 'title'],
         });
@@ -489,11 +513,11 @@ class PlaylistModule {
 
         nfoGenerator.writeShowNfoFile(
           channelFolderPath,
-          channel,
+          channelData,
           allSeasons.map(s => ({ number: s.season_number, title: s.title }))
         );
       } catch (err) {
-        logger.warn({ err, channelId }, 'Backfill: error writing tvshow.nfo');
+        logger.warn({ err, groupKey }, 'Backfill: error writing tvshow.nfo');
       }
     }
   }

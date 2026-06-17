@@ -1322,7 +1322,7 @@ describe('videoDownloadPostProcessFiles', () => {
         p.replace('/tmp/youtarr-downloads', '/library')
       );
       PlaylistVideo.findOne.mockResolvedValue({ position: 1 });
-      Playlist.findOne.mockResolvedValue({ thumbnail: 'https://img.example.com/thumb.jpg' });
+      Playlist.findOne.mockResolvedValue({ thumbnail: 'https://img.example.com/thumb.jpg', channel_id: 'channel123', uploader: 'Channel' });
       Playlist.findAll.mockResolvedValue([
         { season_number: 1, title: 'My Playlist' },
       ]);

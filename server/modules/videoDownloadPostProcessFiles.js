@@ -859,20 +859,36 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
       await copySeasonPosterIfNeeded(playlistIdEnv, playlistRow?.thumbnail || null, seasonFolderPath);
     }
 
-    if (playlistSubfolder && jsonData.channel_id && shouldWriteVideoNfoFiles()) {
-      const channel = await Channel.findOne({ where: { channel_id: jsonData.channel_id } });
-      const allPlaylists = await Playlist.findAll({
-        where: { channel_id: jsonData.channel_id },
-        order: [['season_number', 'ASC']],
-        attributes: ['season_number', 'title'],
+    if (playlistSubfolder && playlistIdEnv && shouldWriteVideoNfoFiles()) {
+      const thisPlaylist = await Playlist.findOne({
+        where: { playlist_id: playlistIdEnv },
+        attributes: ['uploader', 'channel_id'],
       });
-      const seasons = allPlaylists.filter((p) => p.season_number !== null);
-      if (seasons.length > 0) {
-        nfoGenerator.writeShowNfoFile(
-          finalChannelFolderPath,
-          channel || {},
-          seasons.map(s => ({ number: s.season_number, title: s.title }))
-        );
+      if (thisPlaylist) {
+        // playlist.channel_id is often null at download time (YouTube omits it from
+        // flat-playlist listings; it's backfilled later). Mirror downloadModule's
+        // seasonScope logic and scope by uploader instead.
+        const nfoScope = thisPlaylist.uploader
+          ? { uploader: thisPlaylist.uploader }
+          : (jsonData.channel_id ? { channel_id: jsonData.channel_id } : null);
+        if (nfoScope) {
+          const allPlaylists = await Playlist.findAll({
+            where: nfoScope,
+            order: [['season_number', 'ASC']],
+            attributes: ['season_number', 'title'],
+          });
+          const seasons = allPlaylists.filter((p) => p.season_number !== null);
+          if (seasons.length > 0) {
+            const channelForNfo = thisPlaylist.channel_id
+              ? await Channel.findOne({ where: { channel_id: thisPlaylist.channel_id } })
+              : null;
+            nfoGenerator.writeShowNfoFile(
+              finalChannelFolderPath,
+              channelForNfo || {},
+              seasons.map(s => ({ number: s.season_number, title: s.title }))
+            );
+          }
+        }
       }
     }
 

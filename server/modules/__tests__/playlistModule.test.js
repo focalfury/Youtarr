@@ -1002,9 +1002,21 @@ describe('playlistModule', () => {
       expect(Channel.findOne).not.toHaveBeenCalled();
     });
 
-    it('skips playlist with no channel_id', async () => {
+    it('skips playlist with no channel_id and no uploader', async () => {
       await playlistModule.backfillSeasonPosters([{ ...playlist, channel_id: null }]);
       expect(Channel.findOne).not.toHaveBeenCalled();
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('uses uploader as channel folder name when channel_id is null', async () => {
+      await playlistModule.backfillSeasonPosters([{ ...playlist, channel_id: null, uploader: 'My Channel' }]);
+
+      expect(Channel.findOne).not.toHaveBeenCalled();
+      expect(axios.get).toHaveBeenCalledWith(playlist.thumbnail, expect.objectContaining({ responseType: 'arraybuffer' }));
+      expect(fs.copySync).toHaveBeenCalledWith(
+        expect.stringContaining('playlistthumb-PL1.jpg'),
+        expect.stringContaining('poster.jpg')
+      );
     });
 
     it('skips when writeSeasonPosters is false', async () => {
@@ -1083,6 +1095,25 @@ describe('playlistModule', () => {
       await playlistModule.backfillShowNfoFiles(playlists);
 
       expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
+    });
+
+    it('writes tvshow.nfo using uploader scope when channel_id is null', async () => {
+      const uploaderPlaylists = [
+        { playlist_id: 'PL1', season_number: 1, channel_id: null, title: 'Season One', uploader: 'My Channel' },
+        { playlist_id: 'PL2', season_number: 2, channel_id: null, title: 'Season Two', uploader: 'My Channel' },
+      ];
+
+      await playlistModule.backfillShowNfoFiles(uploaderPlaylists);
+
+      expect(Channel.findOne).not.toHaveBeenCalled();
+      expect(nfoGenerator.writeShowNfoFile).toHaveBeenCalledWith(
+        expect.stringContaining('My Channel'),
+        {},
+        [
+          { number: 1, title: 'Season One' },
+          { number: 2, title: 'Season Two' },
+        ]
+      );
     });
   });
 });
