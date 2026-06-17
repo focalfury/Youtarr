@@ -1343,7 +1343,7 @@ describe('videoDownloadPostProcessFiles', () => {
       delete process.env.YOUTARR_PLAYLIST_ID;
     });
 
-    it('copies season poster.jpg when writeSeasonPosters is true and thumbnail is available', async () => {
+    it('copies Season01.jpg when writeSeasonPosters is true and thumbnail is available', async () => {
       configModule.__setConfig({ writeSeasonPosters: true, writeChannelPosters: false, writeVideoNfoFiles: false });
 
       await loadModule();
@@ -1352,7 +1352,7 @@ describe('videoDownloadPostProcessFiles', () => {
       expect(axios.get).toHaveBeenCalledWith('https://img.example.com/thumb.jpg', expect.objectContaining({ responseType: 'arraybuffer' }));
       expect(fs.copySync).toHaveBeenCalledWith(
         expect.stringContaining('playlistthumb-playlist42.jpg'),
-        '/library/Channel/Season 01 - My Playlist/poster.jpg'
+        '/library/Channel/Season 01 - My Playlist/Season01.jpg'
       );
     });
 
@@ -1363,7 +1363,7 @@ describe('videoDownloadPostProcessFiles', () => {
       await settleAsync();
 
       expect(axios.get).not.toHaveBeenCalled();
-      const posterCopy = fs.copySync.mock.calls.find(([, dest]) => dest && dest.endsWith('poster.jpg'));
+      const posterCopy = fs.copySync.mock.calls.find(([, dest]) => dest && /Season\d+\.jpg$/.test(dest));
       expect(posterCopy).toBeUndefined();
     });
 
@@ -1393,7 +1393,7 @@ describe('videoDownloadPostProcessFiles', () => {
 
       expect(fs.copySync).toHaveBeenCalledWith(
         '/library/Channel/Season 01 - My Playlist/S01E001-Video Title.jpg',
-        '/library/Channel/Season 01 - My Playlist/poster.jpg'
+        '/library/Channel/Season 01 - My Playlist/Season01.jpg'
       );
     });
 

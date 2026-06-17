@@ -981,19 +981,19 @@ describe('playlistModule', () => {
 
     beforeEach(() => {
       Channel.findOne.mockResolvedValue({ folder_name: 'My Channel', uploader: 'My Channel' });
-      // Return false for poster.jpg (doesn't exist yet) and cached thumbnail (not downloaded yet);
+      // Return false for Season##.jpg (doesn't exist yet) and cached thumbnail (not downloaded yet);
       // return true for outputDir and seasonFolderPath so the early-exit checks pass.
-      fs.existsSync.mockImplementation((p) => !p.endsWith('poster.jpg') && !p.includes('playlistthumb'));
+      fs.existsSync.mockImplementation((p) => !/Season\d+\.jpg$/.test(p) && !p.includes('playlistthumb'));
       axios.get.mockResolvedValue({ data: Buffer.from('img') });
     });
 
-    it('downloads playlist thumbnail and copies as poster.jpg', async () => {
+    it('downloads playlist thumbnail and copies as Season01.jpg', async () => {
       await playlistModule.backfillSeasonPosters([playlist]);
 
       expect(axios.get).toHaveBeenCalledWith(playlist.thumbnail, expect.objectContaining({ responseType: 'arraybuffer' }));
       expect(fs.copySync).toHaveBeenCalledWith(
         expect.stringContaining('playlistthumb-PL1.jpg'),
-        expect.stringContaining('poster.jpg')
+        expect.stringContaining('Season01.jpg')
       );
     });
 
@@ -1015,7 +1015,7 @@ describe('playlistModule', () => {
       expect(axios.get).toHaveBeenCalledWith(playlist.thumbnail, expect.objectContaining({ responseType: 'arraybuffer' }));
       expect(fs.copySync).toHaveBeenCalledWith(
         expect.stringContaining('playlistthumb-PL1.jpg'),
-        expect.stringContaining('poster.jpg')
+        expect.stringContaining('Season01.jpg')
       );
     });
 
@@ -1027,8 +1027,8 @@ describe('playlistModule', () => {
       expect(axios.get).not.toHaveBeenCalled();
     });
 
-    it('skips when poster.jpg already exists', async () => {
-      fs.existsSync.mockImplementation((p) => p.endsWith('poster.jpg') || p.includes('/library'));
+    it('skips when Season01.jpg already exists', async () => {
+      fs.existsSync.mockImplementation((p) => /Season\d+\.jpg$/.test(p) || p.includes('/library'));
 
       await playlistModule.backfillSeasonPosters([playlist]);
 
@@ -1043,7 +1043,7 @@ describe('playlistModule', () => {
 
       expect(fs.copySync).toHaveBeenCalledWith(
         expect.stringContaining('S01E001-Video.jpg'),
-        expect.stringContaining('poster.jpg')
+        expect.stringContaining('Season01.jpg')
       );
     });
   });

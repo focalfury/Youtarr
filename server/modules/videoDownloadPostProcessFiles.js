@@ -154,28 +154,30 @@ async function downloadSeasonPosterIfMissing(playlistId, thumbnailUrl) {
 }
 
 // Source priority: playlist thumbnail URL -> episode .jpg already on disk. Never the channel logo.
-async function copySeasonPosterIfNeeded(playlistId, thumbnailUrl, seasonFolderPath) {
+async function copySeasonPosterIfNeeded(playlistId, thumbnailUrl, seasonFolderPath, seasonNumber) {
   if (!shouldWriteSeasonPosters()) return;
   try {
-    const seasonPosterPath = path.join(seasonFolderPath, 'poster.jpg');
+    const padded = String(seasonNumber || 1).padStart(2, '0');
+    const seasonPosterName = `Season${padded}.jpg`;
+    const seasonPosterPath = path.join(seasonFolderPath, seasonPosterName);
     if (fs.existsSync(seasonPosterPath)) return;
 
     if (thumbnailUrl) {
       const cachedPath = await downloadSeasonPosterIfMissing(playlistId, thumbnailUrl);
       if (cachedPath) {
         fs.copySync(cachedPath, seasonPosterPath);
-        logger.info({ seasonFolderPath }, 'Season poster.jpg created from playlist thumbnail');
+        logger.info({ seasonFolderPath, seasonPosterName }, 'Season poster created from playlist thumbnail');
         return;
       }
     }
 
     // Fall back to an episode thumbnail already in the season folder (never the channel logo)
     const episodeThumb = fs.existsSync(seasonFolderPath)
-      ? fs.readdirSync(seasonFolderPath).find(f => f.endsWith('.jpg') && f !== 'poster.jpg')
+      ? fs.readdirSync(seasonFolderPath).find(f => f.endsWith('.jpg') && !f.startsWith('Season'))
       : null;
     if (episodeThumb) {
       fs.copySync(path.join(seasonFolderPath, episodeThumb), seasonPosterPath);
-      logger.info({ seasonFolderPath, episodeThumb }, 'Season poster.jpg created from episode thumbnail');
+      logger.info({ seasonFolderPath, episodeThumb, seasonPosterName }, 'Season poster created from episode thumbnail');
     }
   } catch (err) {
     logger.warn({ err, seasonFolderPath }, 'Error copying season poster');
@@ -856,7 +858,7 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
         where: { playlist_id: playlistIdEnv },
         attributes: ['thumbnail'],
       });
-      await copySeasonPosterIfNeeded(playlistIdEnv, playlistRow?.thumbnail || null, seasonFolderPath);
+      await copySeasonPosterIfNeeded(playlistIdEnv, playlistRow?.thumbnail || null, seasonFolderPath, seasonNumberEnv);
     }
 
     if (playlistSubfolder && playlistIdEnv && shouldWriteVideoNfoFiles()) {

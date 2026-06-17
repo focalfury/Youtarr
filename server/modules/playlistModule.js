@@ -420,7 +420,9 @@ class PlaylistModule {
         const seasonTitle = sanitizeNameLikeYtDlp(playlist.title || '').substring(0, 80);
         const seasonFolderName = seasonPrefix + seasonTitle;
         const seasonFolderPath = path.join(outputDir, channelFolderName, seasonFolderName);
-        const posterPath = path.join(seasonFolderPath, 'poster.jpg');
+        const padded = String(playlist.season_number).padStart(2, '0');
+        const seasonPosterName = `Season${padded}.jpg`;
+        const posterPath = path.join(seasonFolderPath, seasonPosterName);
 
         if (!fs.existsSync(seasonFolderPath) || fs.existsSync(posterPath)) continue;
 
@@ -440,16 +442,16 @@ class PlaylistModule {
           }
           if (cacheReady) {
             fs.copySync(cachedPath, posterPath);
-            logger.info({ seasonFolderPath }, 'Backfill: season poster.jpg created from playlist thumbnail');
+            logger.info({ seasonFolderPath, seasonPosterName }, 'Backfill: season poster created from playlist thumbnail');
             copied = true;
           }
         }
 
         if (!copied) {
-          const episodeThumb = fs.readdirSync(seasonFolderPath).find(f => f.endsWith('.jpg') && f !== 'poster.jpg');
+          const episodeThumb = fs.readdirSync(seasonFolderPath).find(f => f.endsWith('.jpg') && !f.startsWith('Season'));
           if (episodeThumb) {
             fs.copySync(path.join(seasonFolderPath, episodeThumb), posterPath);
-            logger.info({ seasonFolderPath, episodeThumb }, 'Backfill: season poster.jpg created from episode thumbnail');
+            logger.info({ seasonFolderPath, episodeThumb, seasonPosterName }, 'Backfill: season poster created from episode thumbnail');
           }
         }
       } catch (err) {

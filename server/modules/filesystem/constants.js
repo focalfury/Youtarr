@@ -52,7 +52,7 @@ const CHANNEL_TEMPLATE = '%(uploader,channel,uploader_id).80B';
  * Matches the legacy fixed template byte-for-byte so existing installs are
  * unchanged until the user touches the setting.
  */
-const DEFAULT_VIDEO_FILENAME_PREFIX = `${CHANNEL_TEMPLATE} - %(title).76B`;
+const DEFAULT_VIDEO_FILENAME_PREFIX = '%(title).76B';
 
 /**
  * Locked suffix appended to every user-customized video filename.
