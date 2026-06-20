@@ -78,6 +78,9 @@ function createPlaylistRoutes({ verifyToken, playlistModule, downloadModule, m3u
       playlistModule.backfillShowNfoFiles(rows).catch((err) =>
         req.log.warn({ err }, 'backfillShowNfoFiles failed')
       );
+      playlistModule.backfillPlexSeasonTitles(rows).catch((err) =>
+        req.log.warn({ err }, 'backfillPlexSeasonTitles failed')
+      );
     } catch (err) {
       req.log.error({ err }, 'GET /api/playlists failed');
       res.status(500).json({ error: 'Failed to list playlists' });

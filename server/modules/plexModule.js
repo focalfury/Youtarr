@@ -1,4 +1,5 @@
 const axios = require('axios');
+const path = require('path');
 const configModule = require('./configModule');
 const logger = require('../logger');
 
@@ -194,6 +195,92 @@ class PlexModule {
     } catch (error) {
       logger.warn({ err: error }, 'Failed to read Plex server identity');
       return { claimed: null, machineIdentifier: null };
+    }
+  }
+
+  // Find a show in the Plex library by its on-disk folder name, then rename the
+  // requested season number to seasonTitle and lock it so Plex won't overwrite
+  // it on the next metadata refresh. Silently no-ops when Plex is unconfigured,
+  // the show hasn't been indexed yet, or the season doesn't exist yet.
+  async renameSeasonInPlex(channelFolderName, seasonNumber, seasonTitle) {
+    const config = configModule.getConfig();
+    const baseUrl = this.getBaseUrl(config.plexIP, config, config.plexPort, config.plexViaHttps);
+    if (!baseUrl || !config.plexApiKey) {
+      logger.debug('Plex season rename: Plex not configured');
+      return;
+    }
+    if (!channelFolderName || seasonNumber == null || !seasonTitle) return;
+
+    const token = config.plexApiKey;
+    const numSeason = Number(seasonNumber);
+
+    try {
+      // Enumerate all video-bearing library sections so renamed seasons work
+      // across subfolder-mapped libraries, not just the primary YouTube library.
+      const sectionsRes = await axios.get(`${baseUrl}/library/sections`, {
+        params: { 'X-Plex-Token': token },
+        timeout: PLEX_REQUEST_TIMEOUT_MS,
+      });
+      const sections = (sectionsRes.data?.MediaContainer?.Directory || [])
+        .filter((d) => d.type === 'movie' || d.type === 'show')
+        .map((d) => d.key);
+
+      // Find the show whose on-disk folder basename matches channelFolderName.
+      let showRatingKey = null;
+      for (const sectionId of sections) {
+        let showsRes;
+        try {
+          showsRes = await axios.get(`${baseUrl}/library/sections/${sectionId}/all`, {
+            params: { type: 2, 'X-Plex-Token': token },
+            timeout: PLEX_REQUEST_TIMEOUT_MS,
+          });
+        } catch (sectionErr) {
+          logger.warn({ err: sectionErr, sectionId }, 'Plex season rename: could not query section');
+          continue;
+        }
+        const shows = showsRes.data?.MediaContainer?.Metadata || [];
+        const match = shows.find((s) =>
+          (s.Location || []).some((loc) => path.basename(loc.path) === channelFolderName)
+        );
+        if (match) {
+          showRatingKey = match.ratingKey;
+          break;
+        }
+      }
+
+      if (!showRatingKey) {
+        logger.debug({ channelFolderName }, 'Plex season rename: show not yet indexed in Plex');
+        return;
+      }
+
+      // Find the specific season by its index number.
+      const seasonsRes = await axios.get(`${baseUrl}/library/metadata/${showRatingKey}/children`, {
+        params: { 'X-Plex-Token': token },
+        timeout: PLEX_REQUEST_TIMEOUT_MS,
+      });
+      const seasons = (seasonsRes.data?.MediaContainer?.Metadata || []).filter((s) => s.type === 'season');
+      const season = seasons.find((s) => Number(s.index) === numSeason);
+
+      if (!season) {
+        logger.debug({ channelFolderName, seasonNumber }, 'Plex season rename: season not yet indexed in Plex');
+        return;
+      }
+
+      // PUT to rename and lock the title so online agents cannot overwrite it.
+      await axios.put(`${baseUrl}/library/metadata/${season.ratingKey}`, null, {
+        params: {
+          'title.value': seasonTitle,
+          'title.locked': 1,
+          'X-Plex-Token': token,
+        },
+        timeout: PLEX_REQUEST_TIMEOUT_MS,
+      });
+      logger.info(
+        { channelFolderName, seasonNumber, seasonTitle, ratingKey: season.ratingKey },
+        'Plex season title set and locked'
+      );
+    } catch (err) {
+      logger.warn({ err, channelFolderName, seasonNumber }, 'Plex season rename failed');
     }
   }
 

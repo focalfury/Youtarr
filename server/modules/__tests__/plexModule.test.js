@@ -1036,4 +1036,114 @@ describe('plexModule', () => {
       expect(logger.warn).toHaveBeenCalledWith('Could not connect to Plex server - returning empty library list');
     });
   });
+
+  describe('renameSeasonInPlex', () => {
+    const SECTIONS_RESPONSE = {
+      data: { MediaContainer: { Directory: [{ type: 'show', key: '1' }] } },
+    };
+    const SHOWS_RESPONSE = {
+      data: { MediaContainer: { Metadata: [
+        { ratingKey: '10', Location: [{ path: '/data/youtube/Rycon' }] },
+      ]}},
+    };
+    const SEASONS_RESPONSE = {
+      data: { MediaContainer: { Metadata: [
+        { type: 'season', ratingKey: '20', index: 1, title: 'Season 1' },
+        { type: 'season', ratingKey: '21', index: 2, title: 'Season 2' },
+      ]}},
+    };
+
+    beforeEach(() => {
+      axios.put = jest.fn().mockResolvedValue({ status: 200 });
+      axios.get
+        .mockResolvedValueOnce(SECTIONS_RESPONSE)
+        .mockResolvedValueOnce(SHOWS_RESPONSE)
+        .mockResolvedValueOnce(SEASONS_RESPONSE);
+    });
+
+    test('renames and locks the season title in Plex', async () => {
+      await plexModule.renameSeasonInPlex('Rycon', 1, 'Cataclysm: Aftershock');
+
+      expect(axios.put).toHaveBeenCalledWith(
+        'http://127.0.0.1:32400/library/metadata/20',
+        null,
+        expect.objectContaining({
+          params: expect.objectContaining({
+            'title.value': 'Cataclysm: Aftershock',
+            'title.locked': 1,
+          }),
+        })
+      );
+    });
+
+    test('renames the correct season when multiple seasons exist', async () => {
+      await plexModule.renameSeasonInPlex('Rycon', 2, 'Season Two Title');
+
+      expect(axios.put).toHaveBeenCalledWith(
+        'http://127.0.0.1:32400/library/metadata/21',
+        null,
+        expect.objectContaining({
+          params: expect.objectContaining({ 'title.value': 'Season Two Title' }),
+        })
+      );
+    });
+
+    test('skips when Plex API key is not configured', async () => {
+      config.plexApiKey = '';
+      await plexModule.renameSeasonInPlex('Rycon', 1, 'Test');
+      expect(axios.get).not.toHaveBeenCalled();
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    test('skips when channelFolderName is empty', async () => {
+      await plexModule.renameSeasonInPlex('', 1, 'Test');
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('skips silently when show is not found in any section', async () => {
+      axios.get
+        .mockReset()
+        .mockResolvedValueOnce(SECTIONS_RESPONSE)
+        .mockResolvedValueOnce({ data: { MediaContainer: { Metadata: [] } } });
+
+      await plexModule.renameSeasonInPlex('UnknownChannel', 1, 'Test');
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    test('skips silently when season is not yet indexed', async () => {
+      axios.get
+        .mockReset()
+        .mockResolvedValueOnce(SECTIONS_RESPONSE)
+        .mockResolvedValueOnce(SHOWS_RESPONSE)
+        .mockResolvedValueOnce({ data: { MediaContainer: { Metadata: [] } } });
+
+      await plexModule.renameSeasonInPlex('Rycon', 1, 'Test');
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
+    test('searches multiple sections and stops at first show match', async () => {
+      axios.get
+        .mockReset()
+        .mockResolvedValueOnce({
+          data: { MediaContainer: { Directory: [
+            { type: 'show', key: '1' },
+            { type: 'show', key: '2' },
+          ]}},
+        })
+        .mockResolvedValueOnce({ data: { MediaContainer: { Metadata: [] } } })
+        .mockResolvedValueOnce(SHOWS_RESPONSE)
+        .mockResolvedValueOnce(SEASONS_RESPONSE);
+
+      await plexModule.renameSeasonInPlex('Rycon', 1, 'Test');
+      expect(axios.put).toHaveBeenCalled();
+      // Both sections were searched but only two /all calls made (one empty, one match)
+      expect(axios.get).toHaveBeenCalledTimes(4);
+    });
+
+    test('logs warning and does not throw on unexpected error', async () => {
+      axios.get.mockReset().mockRejectedValue(new Error('network error'));
+      await expect(plexModule.renameSeasonInPlex('Rycon', 1, 'Test')).resolves.toBeUndefined();
+      expect(logger.warn).toHaveBeenCalled();
+    });
+  });
 });

@@ -39,6 +39,9 @@ jest.mock('../nfoGenerator', () => ({
 jest.mock('../filesystem', () => ({
   sanitizeNameLikeYtDlp: jest.fn((name) => name),
 }));
+jest.mock('../plexModule', () => ({
+  renameSeasonInPlex: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('sequelize', () => ({
   Op: { ne: 'ne' },
 }));
@@ -58,6 +61,7 @@ describe('playlistModule', () => {
   let axios;
   let nfoGenerator;
   let configModule;
+  let plexModule;
 
   beforeEach(() => {
     jest.resetModules();
@@ -77,6 +81,7 @@ describe('playlistModule', () => {
     axios = require('axios');
     nfoGenerator = require('../nfoGenerator');
     configModule = require('../configModule');
+    plexModule = require('../plexModule');
   });
 
   describe('getPlaylistInfo', () => {
@@ -1114,6 +1119,57 @@ describe('playlistModule', () => {
           { number: 2, title: 'Season Two' },
         ]
       );
+    });
+  });
+
+  describe('backfillPlexSeasonTitles', () => {
+    const playlist = {
+      playlist_id: 'PL1',
+      season_number: 1,
+      channel_id: 'ch1',
+      title: 'Cataclysm: Aftershock',
+      uploader: 'Rycon',
+    };
+
+    beforeEach(() => {
+      Channel.findOne.mockResolvedValue({ folder_name: 'Rycon', uploader: 'Rycon' });
+    });
+
+    it('calls renameSeasonInPlex with resolved channel folder name and playlist title', async () => {
+      await playlistModule.backfillPlexSeasonTitles([playlist]);
+
+      expect(plexModule.renameSeasonInPlex).toHaveBeenCalledWith('Rycon', 1, 'Cataclysm: Aftershock');
+    });
+
+    it('skips playlist with no season_number', async () => {
+      await playlistModule.backfillPlexSeasonTitles([{ ...playlist, season_number: null }]);
+      expect(plexModule.renameSeasonInPlex).not.toHaveBeenCalled();
+    });
+
+    it('skips playlist with no title', async () => {
+      await playlistModule.backfillPlexSeasonTitles([{ ...playlist, title: null }]);
+      expect(plexModule.renameSeasonInPlex).not.toHaveBeenCalled();
+    });
+
+    it('skips playlist with no channel_id and no uploader', async () => {
+      await playlistModule.backfillPlexSeasonTitles([{ ...playlist, channel_id: null, uploader: null }]);
+      expect(plexModule.renameSeasonInPlex).not.toHaveBeenCalled();
+    });
+
+    it('uses uploader as folder name when channel_id is null', async () => {
+      await playlistModule.backfillPlexSeasonTitles([{ ...playlist, channel_id: null, uploader: 'Rycon' }]);
+
+      expect(Channel.findOne).not.toHaveBeenCalled();
+      expect(plexModule.renameSeasonInPlex).toHaveBeenCalledWith('Rycon', 1, 'Cataclysm: Aftershock');
+    });
+
+    it('processes multiple playlists', async () => {
+      const pl2 = { ...playlist, playlist_id: 'PL2', season_number: 2, title: 'Arc Two' };
+      await playlistModule.backfillPlexSeasonTitles([playlist, pl2]);
+
+      expect(plexModule.renameSeasonInPlex).toHaveBeenCalledTimes(2);
+      expect(plexModule.renameSeasonInPlex).toHaveBeenCalledWith('Rycon', 1, 'Cataclysm: Aftershock');
+      expect(plexModule.renameSeasonInPlex).toHaveBeenCalledWith('Rycon', 2, 'Arc Two');
     });
   });
 });

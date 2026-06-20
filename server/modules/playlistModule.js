@@ -9,6 +9,7 @@ const configModule = require('./configModule');
 const nfoGenerator = require('./nfoGenerator');
 const { sanitizeNameLikeYtDlp } = require('./filesystem');
 const youtubeApi = require('./youtubeApi');
+const plexModule = require('./plexModule');
 
 // yt-dlp's flat-playlist listing still returns private/deleted/members-only
 // videos but strips their metadata: the title comes back null (current yt-dlp)
@@ -520,6 +521,30 @@ class PlaylistModule {
         );
       } catch (err) {
         logger.warn({ err, groupKey }, 'Backfill: error writing tvshow.nfo');
+      }
+    }
+  }
+
+  async backfillPlexSeasonTitles(playlists) {
+    for (const playlist of playlists) {
+      if (playlist.season_number == null || !playlist.title) continue;
+      if (!playlist.channel_id && !playlist.uploader) continue;
+      try {
+        let channelFolderName;
+        if (playlist.channel_id) {
+          const channel = await Channel.findOne({
+            where: { channel_id: playlist.channel_id },
+            attributes: ['folder_name', 'uploader'],
+          });
+          if (channel) channelFolderName = channel.folder_name || channel.uploader;
+        }
+        if (!channelFolderName && playlist.uploader) {
+          channelFolderName = sanitizeNameLikeYtDlp(playlist.uploader);
+        }
+        if (!channelFolderName) continue;
+        await plexModule.renameSeasonInPlex(channelFolderName, playlist.season_number, playlist.title);
+      } catch (err) {
+        logger.warn({ err, playlist_id: playlist.playlist_id }, 'Backfill: error renaming season in Plex');
       }
     }
   }
