@@ -485,7 +485,7 @@ function PlaylistPage({ token }: PlaylistPageProps) {
                   onChange={(e) => setDeleteFiles(e.target.checked)}
                 />
               }
-              label="Also delete downloaded video files from disk"
+              label="Also delete the channel folder from disk (all seasons and files)"
             />
           )}
         </DialogContent>

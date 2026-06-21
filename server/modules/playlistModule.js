@@ -656,8 +656,9 @@ class PlaylistModule {
       logger.warn({ err, thumbPath }, 'deletePlaylist: could not remove cached thumbnail');
     }
 
-    // Rewrite tvshow.nfo for the channel with the remaining seasons.
-    if (season_number != null) {
+    // Rewrite tvshow.nfo for the channel with the remaining seasons, but only
+    // when not deleting files (the channel folder is being wiped in that path).
+    if (season_number != null && !deleteFiles) {
       try {
         const scope = channel_id ? { channel_id } : uploader ? { uploader } : null;
         if (scope) {
@@ -669,7 +670,8 @@ class PlaylistModule {
       }
     }
 
-    // Optionally remove the season folder and all downloaded videos inside it.
+    // Optionally remove the entire channel folder (contains all seasons, poster,
+    // tvshow.nfo, etc.).
     if (deleteFiles && season_number != null) {
       try {
         let channelFolderName;
@@ -683,18 +685,12 @@ class PlaylistModule {
         if (!channelFolderName && uploader) channelFolderName = sanitizeNameLikeYtDlp(uploader);
 
         if (channelFolderName) {
-          const seasonPrefix = `Season ${String(season_number).padStart(2, '0')} - `;
-          const seasonTitle = sanitizeNameLikeYtDlp(title || '').substring(0, 80);
-          const seasonFolderPath = path.join(
-            configModule.directoryPath,
-            channelFolderName,
-            seasonPrefix + seasonTitle
-          );
-          await fs.remove(seasonFolderPath);
-          logger.info({ seasonFolderPath }, 'deletePlaylist: deleted season folder');
+          const channelFolderPath = path.join(configModule.directoryPath, channelFolderName);
+          await fs.remove(channelFolderPath);
+          logger.info({ channelFolderPath }, 'deletePlaylist: deleted channel folder');
         }
       } catch (err) {
-        logger.warn({ err }, 'deletePlaylist: failed to delete season folder');
+        logger.warn({ err }, 'deletePlaylist: failed to delete channel folder');
       }
     }
   }

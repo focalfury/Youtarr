@@ -1241,30 +1241,36 @@ describe('playlistModule', () => {
       expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
     });
 
-    it('does not delete season folder when deleteFiles is false', async () => {
-      configModule.directoryPath = '/library';
+    it('skips tvshow.nfo rebuild when deleteFiles is true (channel folder is removed)', async () => {
+      fs.existsSync.mockReturnValue(true);
+      await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
+    });
+
+    it('does not delete channel folder when deleteFiles is false', async () => {
       await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: false });
 
       const removedPaths = fs.remove.mock.calls.map(([p]) => p);
-      expect(removedPaths.some(p => p.includes('Season 01'))).toBe(false);
+      // Only M3U and thumbnail should be removed — not a folder named after the channel.
+      expect(removedPaths.some(p => p.includes('TestChannel') && !p.includes('__playlists__') && !p.includes('playlistthumb'))).toBe(false);
     });
 
-    it('deletes season folder when deleteFiles is true', async () => {
-      configModule.directoryPath = '/library';
+    it('deletes the entire channel folder when deleteFiles is true', async () => {
       await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
 
       const removedPaths = fs.remove.mock.calls.map(([p]) => p);
-      expect(removedPaths.some(p => p.includes('Season 01'))).toBe(true);
+      // Should remove a path ending in the channel folder name (no season subfolder).
+      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\') || p.endsWith('TestChannel/'))).toBe(true);
     });
 
     it('uses uploader as folder name when channel lookup yields nothing', async () => {
       mockPlaylist.channel_id = null;
-      configModule.directoryPath = '/library';
 
       await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
 
       const removedPaths = fs.remove.mock.calls.map(([p]) => p);
-      expect(removedPaths.some(p => p.includes('TestChannel') && p.includes('Season 01'))).toBe(true);
+      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\') || p.endsWith('TestChannel/'))).toBe(true);
     });
   });
 });
