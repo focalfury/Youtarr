@@ -614,17 +614,21 @@ class PlaylistModule {
   }
 
   async triggerPostSessionPlexRename() {
-    const RENAME_DELAY_MS = 30000;
     const playlists = await Playlist.findAll({
       where: { season_number: { [Op.ne]: null } },
     });
     if (playlists.length === 0) return;
-    logger.info({ count: playlists.length }, 'Scheduling post-session Plex season rename');
-    setTimeout(() => {
-      this.backfillPlexSeasonTitles(playlists).catch(err => {
-        logger.warn({ err }, 'Post-session Plex season rename failed');
-      });
-    }, RENAME_DELAY_MS);
+    logger.info({ count: playlists.length }, 'Scheduling post-session Plex season rename (3 attempts)');
+
+    const attempt = () => this.backfillPlexSeasonTitles(playlists).catch(err => {
+      logger.warn({ err }, 'Post-session Plex season rename attempt failed');
+    });
+
+    // Three attempts at 1 min, 4 min, 10 min — covers Plex scans that take a few minutes
+    // for newly-added shows to be indexed before the rename API call fires.
+    setTimeout(attempt, 1 * 60 * 1000);
+    setTimeout(attempt, 4 * 60 * 1000);
+    setTimeout(attempt, 10 * 60 * 1000);
   }
 
   async playlistAutoDownload(overrideSettings = {}, runId) {
