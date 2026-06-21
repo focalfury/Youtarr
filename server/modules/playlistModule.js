@@ -263,10 +263,10 @@ class PlaylistModule {
 
   _spawnFlatPlaylist(url) {
     return new Promise((resolve, reject) => {
-      // --dump-single-json forces yt-dlp to follow all YouTube pagination before
-      // outputting, so large playlists (>100 videos) are not silently truncated.
-      // --dump-json (streaming per-entry) stops after the first InnerTube page.
-      const args = ['--flat-playlist', '--dump-single-json', url];
+      // --dump-single-json + --no-lazy-playlist forces yt-dlp to collect all
+      // YouTube pagination pages before outputting, so playlists >100 videos are
+      // not silently truncated to the first InnerTube page.
+      const args = ['--flat-playlist', '--dump-single-json', '--no-lazy-playlist', url];
       const child = spawn('yt-dlp', args);
       let stdout = '';
       let stderr = '';
