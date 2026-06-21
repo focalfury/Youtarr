@@ -87,7 +87,7 @@ class NfoGenerator {
    * @param {object} jsonData - Parsed .info.json data
    * @returns {boolean} True if successful, false otherwise
    */
-  writeVideoNfoFile(videoPath, jsonData) {
+  writeVideoNfoFile(videoPath, jsonData, finalPath = null) {
     logger.info({ videoPath }, 'Writing NFO file for video');
     try {
       // Generate NFO path (same as video but with .nfo extension)
@@ -97,6 +97,17 @@ class NfoGenerator {
         name: parsedPath.name,
         ext: '.nfo'
       });
+
+      // Detect TV show episode from S##E### pattern.
+      // Use finalPath when provided — the temp path used at write-time has no S##E## prefix;
+      // the final renamed path does. The NFO is still written to the temp location and
+      // moved/renamed alongside the video file in Phase 3 of post-processing.
+      const detectPath = finalPath || videoPath;
+      const filenameBase = path.parse(detectPath).name;
+      const episodeMatch = filenameBase.match(/S(\d+)E(\d+)/i);
+      const isEpisode = !!episodeMatch;
+      const seasonNumber = isEpisode ? parseInt(episodeMatch[1], 10) : null;
+      const episodeNumber = isEpisode ? parseInt(episodeMatch[2], 10) : null;
 
       // Extract and prepare data
       const rawTitle = jsonData.fulltitle || jsonData.title || 'Unknown Title';
@@ -133,10 +144,15 @@ class NfoGenerator {
         .map(tag => `  <tag>${this.escapeXml(tag)}</tag>`)
         .join('\n');
 
-      // Build the XML content
+      // Build the XML content — use episodedetails for TV show episodes, movie for flat files
+      const rootTag = isEpisode ? 'episodedetails' : 'movie';
       let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
-      xml += '<movie>\n';
+      xml += `<${rootTag}>\n`;
       xml += `  <title>${title}</title>\n`;
+      if (isEpisode) {
+        xml += `  <season>${seasonNumber}</season>\n`;
+        xml += `  <episode>${episodeNumber}</episode>\n`;
+      }
 
       if (plot) {
         xml += `  <plot>${plot}</plot>\n`;
@@ -213,7 +229,7 @@ class NfoGenerator {
       // xml += `\n  <!-- Optional: group by channel -->\n`;
       // xml += `  <!-- <set>${studio}</set> -->\n`;
 
-      xml += '</movie>\n';
+      xml += `</${rootTag}>\n`;
 
       // Write the NFO file
       fs.writeFileSync(nfoPath, xml, 'utf8');
