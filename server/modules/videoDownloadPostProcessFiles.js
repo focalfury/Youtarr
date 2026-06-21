@@ -505,10 +505,15 @@ async function resolveTrackedOwnerChannelId(youtubeId, metadataChannelId) {
     } else try {
       const apArgs = [videoPath];
 
-      // Title (channel name + video title)
+      // Title — strip "ChannelName - " prefix if the YouTube title includes it
       const channelName = jsonData.uploader || jsonData.channel || jsonData.uploader_id || '';
-      if (channelName && jsonData.title) {
-        apArgs.push('--title', `${channelName} - ${jsonData.title}`);
+      const rawTitle = jsonData.fulltitle || jsonData.title || '';
+      const uploaderPrefix = channelName + ' - ';
+      const embeddedTitle = channelName.length > 0 && rawTitle.startsWith(uploaderPrefix)
+        ? rawTitle.slice(uploaderPrefix.length)
+        : rawTitle;
+      if (embeddedTitle) {
+        apArgs.push('--title', embeddedTitle);
       }
 
       // Genre from YouTube categories
