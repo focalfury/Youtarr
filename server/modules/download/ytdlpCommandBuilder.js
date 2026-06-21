@@ -539,6 +539,7 @@ class YtdlpCommandBuilder {
 
     args.push(
       '--ignore-errors',
+      '--parse-metadata', '%(title)s:%(uploader)s - (?P<title>.+)',
       '--embed-metadata',
       '--write-info-json',
       '--no-write-playlist-metafiles',
@@ -621,6 +622,7 @@ class YtdlpCommandBuilder {
 
     args.push(
       '--ignore-errors',
+      '--parse-metadata', '%(title)s:%(uploader)s - (?P<title>.+)',
       '--embed-metadata',
       '--write-info-json',
       '--no-write-playlist-metafiles',
