@@ -225,8 +225,10 @@ class PlexModule {
         .filter((d) => d.type === 'movie' || d.type === 'show')
         .map((d) => d.key);
 
-      // Find the show whose on-disk folder basename matches channelFolderName.
+      // Find the show whose on-disk folder basename matches channelFolderName,
+      // with a title fallback for libraries where Location is not populated.
       let showRatingKey = null;
+      const diagnosticShows = [];
       for (const sectionId of sections) {
         let showsRes;
         try {
@@ -239,9 +241,12 @@ class PlexModule {
           continue;
         }
         const shows = showsRes.data?.MediaContainer?.Metadata || [];
-        const match = shows.find((s) =>
-          (s.Location || []).some((loc) => path.basename(loc.path) === channelFolderName)
+        shows.forEach((s) =>
+          diagnosticShows.push({ title: s.title, paths: (s.Location || []).map((loc) => path.basename(loc.path)) })
         );
+        const match =
+          shows.find((s) => (s.Location || []).some((loc) => path.basename(loc.path) === channelFolderName)) ||
+          shows.find((s) => s.title === channelFolderName);
         if (match) {
           showRatingKey = match.ratingKey;
           break;
@@ -249,19 +254,10 @@ class PlexModule {
       }
 
       if (!showRatingKey) {
-        const allPaths = [];
-        for (const sectionId of sections) {
-          try {
-            const r = await axios.get(`${baseUrl}/library/sections/${sectionId}/all`, {
-              params: { type: 2, 'X-Plex-Token': token },
-              timeout: PLEX_REQUEST_TIMEOUT_MS,
-            });
-            (r.data?.MediaContainer?.Metadata || []).forEach((s) =>
-              (s.Location || []).forEach((loc) => allPaths.push(path.basename(loc.path)))
-            );
-          } catch (_) {}
-        }
-        logger.info({ channelFolderName, plexShowFolders: allPaths }, 'Plex season rename: show not yet indexed in Plex');
+        logger.info(
+          { channelFolderName, sectionsChecked: sections, plexShows: diagnosticShows },
+          'Plex season rename: show not yet indexed in Plex'
+        );
         return;
       }
 
