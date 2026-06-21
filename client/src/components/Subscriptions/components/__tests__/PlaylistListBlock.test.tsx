@@ -27,6 +27,7 @@ const basePlaylist: Playlist = {
   audio_format: null,
   default_rating: null,
   lastFetched: null,
+  season_number: null,
 };
 
 const renderBlock = (playlists: Playlist[]) =>

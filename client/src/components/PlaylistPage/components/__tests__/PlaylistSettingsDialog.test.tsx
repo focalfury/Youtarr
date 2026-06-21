@@ -71,6 +71,7 @@ const basePlaylist: Playlist = {
   audio_format: null,
   default_rating: 'PG',
   lastFetched: null,
+  season_number: null,
 };
 
 function setupDialog(overrides: Partial<React.ComponentProps<typeof PlaylistSettingsDialog>> = {}) {

@@ -35,6 +35,7 @@ const baseProps = {
   onChangePublic: jest.fn(),
   onSyncNow: jest.fn(),
   onRegenerateM3U: jest.fn(),
+  onDelete: jest.fn(),
 };
 
 describe('PlaylistHeader', () => {

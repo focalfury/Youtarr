@@ -4,7 +4,7 @@ const fs = require('fs-extra');
 const { Op } = require('sequelize');
 const axios = require('axios');
 const logger = require('../logger');
-const { Playlist, PlaylistVideo, Channel } = require('../models');
+const { Playlist, PlaylistVideo, PlaylistSyncState, Channel } = require('../models');
 const configModule = require('./configModule');
 const nfoGenerator = require('./nfoGenerator');
 const { sanitizeNameLikeYtDlp } = require('./filesystem');
@@ -629,6 +629,74 @@ class PlaylistModule {
     setTimeout(attempt, 1 * 60 * 1000);
     setTimeout(attempt, 4 * 60 * 1000);
     setTimeout(attempt, 10 * 60 * 1000);
+  }
+
+  async deletePlaylist(playlist, { deleteFiles = false } = {}) {
+    const { id, playlist_id, title, season_number, channel_id, uploader } = playlist;
+
+    // Delete in dependency order: sync states (FK -> Playlist.id), then playlist
+    // videos (FK -> Playlist.playlist_id string), then the playlist row itself.
+    await PlaylistSyncState.destroy({ where: { playlist_id: id } });
+    await PlaylistVideo.destroy({ where: { playlist_id: playlist_id } });
+    await playlist.destroy();
+
+    // Delete the M3U fallback file if it exists.
+    const m3uPath = path.join(
+      configModule.directoryPath,
+      '__playlists__',
+      sanitizeNameLikeYtDlp(title || playlist_id) + '.m3u'
+    );
+    try { await fs.remove(m3uPath); } catch (err) {
+      logger.warn({ err, m3uPath }, 'deletePlaylist: could not remove M3U file');
+    }
+
+    // Delete the locally-cached season thumbnail.
+    const thumbPath = path.join(configModule.getImagePath(), `playlistthumb-${playlist_id}.jpg`);
+    try { await fs.remove(thumbPath); } catch (err) {
+      logger.warn({ err, thumbPath }, 'deletePlaylist: could not remove cached thumbnail');
+    }
+
+    // Rewrite tvshow.nfo for the channel with the remaining seasons.
+    if (season_number != null) {
+      try {
+        const scope = channel_id ? { channel_id } : uploader ? { uploader } : null;
+        if (scope) {
+          const remaining = await Playlist.findAll({ where: scope });
+          await this.backfillShowNfoFiles(remaining);
+        }
+      } catch (err) {
+        logger.warn({ err }, 'deletePlaylist: failed to rebuild tvshow.nfo');
+      }
+    }
+
+    // Optionally remove the season folder and all downloaded videos inside it.
+    if (deleteFiles && season_number != null) {
+      try {
+        let channelFolderName;
+        if (channel_id) {
+          const channel = await Channel.findOne({
+            where: { channel_id },
+            attributes: ['folder_name', 'uploader'],
+          });
+          if (channel) channelFolderName = channel.folder_name || channel.uploader;
+        }
+        if (!channelFolderName && uploader) channelFolderName = sanitizeNameLikeYtDlp(uploader);
+
+        if (channelFolderName) {
+          const seasonPrefix = `Season ${String(season_number).padStart(2, '0')} - `;
+          const seasonTitle = sanitizeNameLikeYtDlp(title || '').substring(0, 80);
+          const seasonFolderPath = path.join(
+            configModule.directoryPath,
+            channelFolderName,
+            seasonPrefix + seasonTitle
+          );
+          await fs.remove(seasonFolderPath);
+          logger.info({ seasonFolderPath }, 'deletePlaylist: deleted season folder');
+        }
+      } catch (err) {
+        logger.warn({ err }, 'deletePlaylist: failed to delete season folder');
+      }
+    }
   }
 
   async playlistAutoDownload(overrideSettings = {}, runId) {

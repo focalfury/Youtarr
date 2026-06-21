@@ -5,6 +5,11 @@ import PlaylistPage from '../PlaylistPage';
 import { renderWithProviders } from '../../test-utils';
 import { PlaylistVideo } from '../../types/playlist';
 
+jest.mock('axios', () => ({
+  delete: jest.fn(),
+  isAxiosError: jest.fn(() => false),
+}));
+
 const mockTriggerDownload = jest.fn();
 const mockNavigate = jest.fn();
 const mockToggleAutoDownload = jest.fn();
@@ -290,5 +295,64 @@ describe('PlaylistPage selected-download selection lifecycle', () => {
 
     const sortControl = screen.getByRole('button', { name: 'Sort' });
     expect(sortControl).toHaveTextContent('Newest first');
+  });
+});
+
+describe('PlaylistPage delete dialog', () => {
+  let mockAxios: { delete: jest.Mock; isAxiosError: jest.Mock };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAxios = require('axios');
+    mockAxios.delete.mockResolvedValue({});
+  });
+
+  test('clicking the delete button opens the confirmation dialog', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<PlaylistPage token="t" />);
+
+    await user.click(screen.getByRole('button', { name: /Delete playlist/i }));
+
+    expect(await screen.findByText('Delete playlist?')).toBeInTheDocument();
+  });
+
+  test('Cancel closes the dialog without calling delete', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<PlaylistPage token="t" />);
+
+    await user.click(screen.getByRole('button', { name: /Delete playlist/i }));
+    await screen.findByText('Delete playlist?');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(screen.queryByText('Delete playlist?')).not.toBeInTheDocument());
+    expect(mockAxios.delete).not.toHaveBeenCalled();
+  });
+
+  test('confirming delete calls DELETE /api/playlists/:id with deleteFiles=false and navigates', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<PlaylistPage token="t" />);
+
+    await user.click(screen.getByRole('button', { name: /Delete playlist/i }));
+    await screen.findByText('Delete playlist?');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(mockAxios.delete).toHaveBeenCalledWith(
+      '/api/playlists/PL1',
+      expect.objectContaining({ data: { deleteFiles: false } })
+    ));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/subscriptions?tab=playlists'));
+  });
+
+  test('on API failure shows error snackbar and does not navigate', async () => {
+    const user = userEvent.setup();
+    mockAxios.delete.mockRejectedValue(new Error('server error'));
+    renderWithProviders(<PlaylistPage token="t" />);
+
+    await user.click(screen.getByRole('button', { name: /Delete playlist/i }));
+    await screen.findByText('Delete playlist?');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('Failed to delete playlist')).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

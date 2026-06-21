@@ -155,11 +155,12 @@ function createPlaylistRoutes({ verifyToken, playlistModule, downloadModule, m3u
     try {
       const p = await Playlist.findOne({ where: { playlist_id: req.params.playlistId } });
       if (!p) return res.status(404).json({ error: 'Playlist not found' });
-      await p.update({ enabled: false });
+      const deleteFiles = req.body?.deleteFiles === true;
+      await playlistModule.deletePlaylist(p, { deleteFiles });
       res.json({ success: true });
     } catch (err) {
-      req.log.error({ err }, 'unsubscribe failed');
-      res.status(500).json({ error: 'Failed to unsubscribe' });
+      req.log.error({ err }, 'delete playlist failed');
+      res.status(500).json({ error: 'Failed to delete playlist' });
     }
   });
 

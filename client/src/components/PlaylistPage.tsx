@@ -1,15 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   Typography,
 } from './ui';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -123,6 +126,9 @@ function PlaylistPage({ token }: PlaylistPageProps) {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmPublicOpen, setConfirmPublicOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [deleteRunning, setDeleteRunning] = useState(false);
   const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
   const [modalVideo, setModalVideo] = useState<VideoModalData | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>({
@@ -322,6 +328,25 @@ function PlaylistPage({ token }: PlaylistPageProps) {
     [refetch, showSnackbar]
   );
 
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!playlist) return;
+    setDeleteRunning(true);
+    try {
+      await axios.delete(`/api/playlists/${playlist.playlist_id}`, {
+        headers: token ? { 'x-access-token': token } : undefined,
+        data: { deleteFiles },
+      });
+      navigate('/subscriptions?tab=playlists');
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err) && typeof (err.response?.data as { error?: unknown })?.error === 'string'
+        ? (err.response!.data as { error: string }).error
+        : 'Failed to delete playlist';
+      showSnackbar(msg, 'error');
+      setDeleteRunning(false);
+      setDeleteOpen(false);
+    }
+  }, [playlist, deleteFiles, token, navigate, showSnackbar]);
+
   if (loading && !playlist) {
     return (
       <div>
@@ -377,6 +402,7 @@ function PlaylistPage({ token }: PlaylistPageProps) {
         onChangePublic={() => setConfirmPublicOpen(true)}
         onSyncNow={() => handleAction('Sync', sync, 'Sync started; servers will update shortly')}
         onRegenerateM3U={() => handleAction('M3U regen', regenerateM3U)}
+        onDelete={() => { setDeleteFiles(false); setDeleteOpen(true); }}
       />
 
       <Card style={{ borderRadius: 'var(--radius-ui)' }}>
@@ -438,6 +464,40 @@ function PlaylistPage({ token }: PlaylistPageProps) {
         defaultResolution={playlist.video_quality || config.preferredResolution || '1080'}
         defaultAudioFormat={playlist.audio_format}
       />
+
+      <Dialog
+        open={deleteOpen}
+        onClose={() => !deleteRunning && setDeleteOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Delete playlist?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" className="mb-4">
+            This removes <strong>{playlist.title}</strong> from Youtarr permanently — the playlist
+            subscription, all tracked videos, sync state, and the M3U file will be deleted.
+          </Typography>
+          {playlist.season_number != null && (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={deleteFiles}
+                  onChange={(e) => setDeleteFiles(e.target.checked)}
+                />
+              }
+              label="Also delete downloaded video files from disk"
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="text" onClick={() => setDeleteOpen(false)} disabled={deleteRunning}>
+            Cancel
+          </Button>
+          <Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={deleteRunning}>
+            {deleteRunning ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={confirmPublicOpen}

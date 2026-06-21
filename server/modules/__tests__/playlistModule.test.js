@@ -5,6 +5,7 @@ jest.mock('../../logger', () => ({
 jest.mock('../../models', () => ({
   Playlist: { findOne: jest.fn(), create: jest.fn(), update: jest.fn(), findAll: jest.fn(), max: jest.fn() },
   PlaylistVideo: { findAll: jest.fn(), bulkCreate: jest.fn(), update: jest.fn(), destroy: jest.fn() },
+  PlaylistSyncState: { destroy: jest.fn() },
   Channel: { findAll: jest.fn(), findOne: jest.fn() },
 }));
 jest.mock('../channelModule', () => ({
@@ -23,6 +24,7 @@ jest.mock('fs-extra', () => ({
   readdirSync: jest.fn(() => []),
   copySync: jest.fn(),
   outputFileSync: jest.fn(),
+  remove: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('axios', () => ({
   get: jest.fn(),
@@ -52,6 +54,7 @@ describe('playlistModule', () => {
   let playlistModule;
   let Playlist;
   let PlaylistVideo;
+  let PlaylistSyncState;
   let Channel;
   let channelModule;
   let downloadModule;
@@ -73,7 +76,7 @@ describe('playlistModule', () => {
     childProcess.spawn = jest.fn();
     // Now require the module — its top-level destructure picks up the mock.
     playlistModule = require('../playlistModule');
-    ({ Playlist, PlaylistVideo, Channel } = require('../../models'));
+    ({ Playlist, PlaylistVideo, PlaylistSyncState, Channel } = require('../../models'));
     channelModule = require('../channelModule');
     downloadModule = require('../downloadModule');
     youtubeApi = require('../youtubeApi');
@@ -1170,6 +1173,98 @@ describe('playlistModule', () => {
       expect(plexModule.renameSeasonInPlex).toHaveBeenCalledTimes(2);
       expect(plexModule.renameSeasonInPlex).toHaveBeenCalledWith('Rycon', 1, 'Cataclysm: Aftershock');
       expect(plexModule.renameSeasonInPlex).toHaveBeenCalledWith('Rycon', 2, 'Arc Two');
+    });
+  });
+
+  describe('deletePlaylist', () => {
+    let mockPlaylist;
+
+    beforeEach(() => {
+      mockPlaylist = {
+        id: 42,
+        playlist_id: 'PLxyz',
+        title: 'My Playlist',
+        season_number: 1,
+        channel_id: 'UCabc',
+        uploader: 'TestChannel',
+        destroy: jest.fn().mockResolvedValue(undefined),
+      };
+      PlaylistSyncState.destroy.mockResolvedValue(1);
+      PlaylistVideo.destroy.mockResolvedValue(5);
+      Playlist.findAll.mockResolvedValue([]);
+      Channel.findOne.mockResolvedValue({ folder_name: 'TestChannel', uploader: 'TestChannel' });
+    });
+
+    it('deletes PlaylistSyncState, PlaylistVideo, and the playlist record', async () => {
+      await playlistModule.deletePlaylist(mockPlaylist, {});
+
+      expect(PlaylistSyncState.destroy).toHaveBeenCalledWith({ where: { playlist_id: 42 } });
+      expect(PlaylistVideo.destroy).toHaveBeenCalledWith({ where: { playlist_id: 'PLxyz' } });
+      expect(mockPlaylist.destroy).toHaveBeenCalled();
+    });
+
+    it('removes the M3U file', async () => {
+      await playlistModule.deletePlaylist(mockPlaylist, {});
+
+      const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+      expect(removedPaths.some(p => p.includes('__playlists__') && p.endsWith('.m3u'))).toBe(true);
+    });
+
+    it('removes the cached thumbnail', async () => {
+      await playlistModule.deletePlaylist(mockPlaylist, {});
+
+      const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+      expect(removedPaths.some(p => p.includes('playlistthumb-PLxyz.jpg'))).toBe(true);
+    });
+
+    it('rebuilds tvshow.nfo for the remaining seasons when season_number is set', async () => {
+      const remaining = [{ channel_id: 'UCabc', uploader: null, season_number: 2, title: 'Arc Two' }];
+      // Needs 2 findAll calls: one in deletePlaylist to get remaining playlists,
+      // another inside backfillShowNfoFiles to get the full ordered season list.
+      Playlist.findAll
+        .mockResolvedValueOnce(remaining)
+        .mockResolvedValueOnce(remaining);
+      // backfillShowNfoFiles skips if the channel folder doesn't exist on disk.
+      fs.existsSync.mockReturnValue(true);
+
+      await playlistModule.deletePlaylist(mockPlaylist, {});
+
+      expect(Playlist.findAll).toHaveBeenCalledWith({ where: { channel_id: 'UCabc' } });
+      expect(nfoGenerator.writeShowNfoFile).toHaveBeenCalled();
+    });
+
+    it('skips tvshow.nfo rebuild when season_number is null', async () => {
+      mockPlaylist.season_number = null;
+      await playlistModule.deletePlaylist(mockPlaylist, {});
+
+      expect(Playlist.findAll).not.toHaveBeenCalled();
+      expect(nfoGenerator.writeShowNfoFile).not.toHaveBeenCalled();
+    });
+
+    it('does not delete season folder when deleteFiles is false', async () => {
+      configModule.directoryPath = '/library';
+      await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: false });
+
+      const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+      expect(removedPaths.some(p => p.includes('Season 01'))).toBe(false);
+    });
+
+    it('deletes season folder when deleteFiles is true', async () => {
+      configModule.directoryPath = '/library';
+      await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+      const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+      expect(removedPaths.some(p => p.includes('Season 01'))).toBe(true);
+    });
+
+    it('uses uploader as folder name when channel lookup yields nothing', async () => {
+      mockPlaylist.channel_id = null;
+      configModule.directoryPath = '/library';
+
+      await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+      const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+      expect(removedPaths.some(p => p.includes('TestChannel') && p.includes('Season 01'))).toBe(true);
     });
   });
 });

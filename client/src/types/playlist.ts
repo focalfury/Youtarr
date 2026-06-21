@@ -21,6 +21,7 @@ export interface Playlist {
   audio_format: string | null;
   default_rating: string | null;
   lastFetched: string | null;
+  season_number: number | null;
 }
 
 export interface PlaylistVideo {

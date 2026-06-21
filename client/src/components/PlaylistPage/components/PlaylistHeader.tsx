@@ -1,6 +1,6 @@
 import React from 'react';
-import { Box, Card, CardContent, Stack, Tooltip, Typography } from '../../ui';
-import { Info as InfoIcon } from '../../../lib/icons';
+import { Box, Button, Card, CardContent, Stack, Tooltip, Typography } from '../../ui';
+import { Info as InfoIcon, Delete as TrashIcon } from '../../../lib/icons';
 import { MediaServerStatus, MediaServerType, Playlist } from '../../../types/playlist';
 import LibraryDownloadsGroup from './LibraryDownloadsGroup';
 import MediaServerSyncGroup from './MediaServerSyncGroup';
@@ -22,6 +22,7 @@ interface PlaylistHeaderProps {
   onChangePublic: () => void;
   onSyncNow: () => void;
   onRegenerateM3U: () => void;
+  onDelete: () => void;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -50,6 +51,7 @@ const PlaylistHeader: React.FC<PlaylistHeaderProps> = ({
   onChangePublic,
   onSyncNow,
   onRegenerateM3U,
+  onDelete,
 }) => {
   return (
     <Card elevation={8} className="mb-4" style={{ borderRadius: 'var(--radius-ui)', overflow: 'hidden' }}>
@@ -71,9 +73,23 @@ const PlaylistHeader: React.FC<PlaylistHeaderProps> = ({
           />
           <div className="flex flex-col gap-4 flex-1 min-w-0">
             <div>
-              <Typography variant="h5" style={{ fontWeight: 700 }}>
-                {playlist.title}
-              </Typography>
+              <div className="flex items-start justify-between gap-2">
+                <Typography variant="h5" style={{ fontWeight: 700 }}>
+                  {playlist.title}
+                </Typography>
+                <Tooltip title="Delete playlist">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    color="error"
+                    onClick={onDelete}
+                    aria-label="Delete playlist"
+                    className="shrink-0"
+                  >
+                    <TrashIcon size={16} />
+                  </Button>
+                </Tooltip>
+              </div>
               {playlist.uploader && (
                 <Typography variant="body2" color="text.secondary">
                   By {playlist.uploader}
