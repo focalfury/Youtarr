@@ -293,30 +293,52 @@ class PlaylistModule {
     });
   }
 
-  // yt-dlp truncates large YouTube playlists to the first InnerTube API page
-  // (100 items) when fetching without explicit position bounds. Work around this
-  // by detecting truncation after the first fetch and requesting subsequent
-  // 100-item slices with --playlist-start/--playlist-end until all items are
-  // collected. YouTube MUST follow continuation tokens to serve items 101+.
+  // Fetch items beyond position 100 without --flat-playlist so yt-dlp uses its
+  // full YouTube extractor, which properly follows continuation tokens. Slower
+  // than flat mode (makes per-video API calls) but the only way to reach items
+  // past the first InnerTube page when --flat-playlist pagination is broken.
+  _fetchPlaylistRemainder(url, startItem, total) {
+    return new Promise((resolve) => {
+      const args = [
+        '--skip-download',
+        '--dump-json',
+        '--ignore-errors',
+        '--playlist-start', String(startItem),
+        url,
+      ];
+      const child = spawn('yt-dlp', args);
+      let stdout = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', () => {});
+      child.on('close', () => {
+        const entries = stdout
+          .split('\n')
+          .filter(Boolean)
+          .flatMap((line) => {
+            try {
+              const e = JSON.parse(line);
+              return [{ ...e, playlist_count: total }];
+            } catch {
+              return [];
+            }
+          });
+        resolve(entries);
+      });
+    });
+  }
+
+  // yt-dlp's --flat-playlist mode only returns the first YouTube InnerTube API
+  // page (100 items). For larger playlists, fetch the first 100 in fast flat
+  // mode, detect the truncation, then retrieve the remainder without
+  // --flat-playlist (slower per-video calls but correctly follows continuations).
   async _spawnFlatPlaylist(url) {
-    const BATCH_SIZE = 100;
     const { entries: first, total } = await this._fetchPlaylistSlice(url);
 
     if (!total || first.length >= total) return first;
 
-    const all = [...first];
-    let start = all.length + 1;
-
-    while (all.length < total) {
-      const end = Math.min(start + BATCH_SIZE - 1, total);
-      logger.info({ url, start, end, total, fetched: all.length }, 'Fetching playlist continuation batch');
-      const { entries } = await this._fetchPlaylistSlice(url, start, end, total);
-      if (!entries.length) break;
-      all.push(...entries);
-      start = all.length + 1;
-    }
-
-    return all;
+    logger.info({ url, fetched: first.length, total }, 'Playlist truncated by flat mode; fetching remainder via full extractor');
+    const remainder = await this._fetchPlaylistRemainder(url, first.length + 1, total);
+    return [...first, ...remainder];
   }
 
   async ensureSourceChannel(uploaderInfo, playlist) {
