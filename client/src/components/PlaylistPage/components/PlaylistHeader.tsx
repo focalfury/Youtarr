@@ -79,7 +79,7 @@ const PlaylistHeader: React.FC<PlaylistHeaderProps> = ({
                 </Typography>
                 <Tooltip title="Delete playlist">
                   <Button
-                    variant="ghost"
+                    variant="text"
                     size="sm"
                     color="error"
                     onClick={onDelete}
