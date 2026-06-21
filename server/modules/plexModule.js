@@ -83,6 +83,31 @@ class PlexModule {
     );
   }
 
+  /**
+   * Refresh Plex after a download session. Uses the configured library ID when
+   * available; falls back to discovering and refreshing all library sections so
+   * the scan fires even if plexYoutubeLibraryId has not been set.
+   */
+  async refreshForSessionEnd() {
+    const config = configModule.getConfig();
+    const baseUrl = this.getBaseUrl(config.plexIP, config, config.plexPort, config.plexViaHttps);
+    if (!baseUrl || !config.plexApiKey) {
+      logger.warn('Skipping Plex refresh - missing server details or credentials');
+      return;
+    }
+    if (config.plexYoutubeLibraryId) {
+      await this.refreshLibrary(config.plexYoutubeLibraryId);
+      return;
+    }
+    const libraries = await this.getLibraries();
+    if (!libraries || libraries.length === 0) {
+      logger.warn('Skipping Plex refresh - no libraries found');
+      return;
+    }
+    logger.info({ count: libraries.length }, 'No specific library configured — refreshing all Plex libraries');
+    await Promise.allSettled(libraries.map((lib) => this.refreshLibrary(lib.id)));
+  }
+
   async refreshLibrary(libraryId) {
     const config = configModule.getConfig();
     const resolvedLibraryId = libraryId || config.plexYoutubeLibraryId;

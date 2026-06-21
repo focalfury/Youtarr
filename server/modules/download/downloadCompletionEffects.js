@@ -4,10 +4,8 @@
 // backfill.
 const fsPromises = require('fs').promises;
 const logger = require('../../logger');
-const configModule = require('../configModule');
 const plexModule = require('../plexModule');
 const jobModule = require('../jobModule');
-const filesystem = require('../filesystem');
 const { JobVideoDownload } = require('../../models');
 const Channel = require('../../models/channel');
 
@@ -97,20 +95,9 @@ async function runCompletionSideEffects({
     // each video under its channel-specific sub_folder) instead of relying
     // on the job-level subfolderOverride, which is null for typical
     // manual URL and non-grouped channel downloads.
-    const baseDir = configModule.directoryPath;
-    const subfoldersInUse = new Set();
-    for (const video of (videoData || [])) {
-      const mediaPath = video.filePath || video.audioFilePath;
-      if (!mediaPath) continue;
-      subfoldersInUse.add(filesystem.extractSubfolderFromAbsPath(mediaPath, baseDir));
-    }
-
-    if (subfoldersInUse.size > 0) {
-      // Defensive: refreshLibrary currently swallows errors internally
-      plexModule.refreshLibrariesForSubfolders([...subfoldersInUse]).catch(err => {
-        logger.error({ err }, 'Failed to refresh Plex libraries');
-      });
-    }
+    plexModule.refreshForSessionEnd().catch(err => {
+      logger.error({ err }, 'Failed to refresh Plex libraries');
+    });
 
     // Rename Plex seasons once per download session, after a short delay to give
     // the library scan time to index any newly-added shows before the API rename fires.
