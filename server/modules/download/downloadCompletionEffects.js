@@ -112,6 +112,12 @@ async function runCompletionSideEffects({
       });
     }
 
+    // Rename Plex seasons once per download session, after a short delay to give
+    // the library scan time to index any newly-added shows before the API rename fires.
+    require('../playlistModule').triggerPostSessionPlexRename().catch(err => {
+      logger.error({ err }, 'Failed to schedule post-session Plex season rename');
+    });
+
     jobModule.startNextJob().catch(err => {
       logger.error({ err }, 'Failed to start next job');
     });

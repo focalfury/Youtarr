@@ -613,6 +613,20 @@ class PlaylistModule {
     }
   }
 
+  async triggerPostSessionPlexRename() {
+    const RENAME_DELAY_MS = 30000;
+    const playlists = await Playlist.findAll({
+      where: { season_number: { [Op.ne]: null } },
+    });
+    if (playlists.length === 0) return;
+    logger.info({ count: playlists.length }, 'Scheduling post-session Plex season rename');
+    setTimeout(() => {
+      this.backfillPlexSeasonTitles(playlists).catch(err => {
+        logger.warn({ err }, 'Post-session Plex season rename failed');
+      });
+    }, RENAME_DELAY_MS);
+  }
+
   async playlistAutoDownload(overrideSettings = {}, runId) {
     const downloadModule = require('./downloadModule');
     const playlists = await Playlist.findAll({
