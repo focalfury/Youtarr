@@ -206,7 +206,7 @@ class PlexModule {
     const config = configModule.getConfig();
     const baseUrl = this.getBaseUrl(config.plexIP, config, config.plexPort, config.plexViaHttps);
     if (!baseUrl || !config.plexApiKey) {
-      logger.debug('Plex season rename: Plex not configured');
+      logger.info({ hasBaseUrl: !!baseUrl, hasApiKey: !!config.plexApiKey }, 'Plex season rename: Plex not configured');
       return;
     }
     if (!channelFolderName || seasonNumber == null || !seasonTitle) return;
@@ -249,7 +249,7 @@ class PlexModule {
       }
 
       if (!showRatingKey) {
-        logger.debug({ channelFolderName }, 'Plex season rename: show not yet indexed in Plex');
+        logger.info({ channelFolderName }, 'Plex season rename: show not yet indexed in Plex');
         return;
       }
 
@@ -262,7 +262,7 @@ class PlexModule {
       const season = seasons.find((s) => Number(s.index) === numSeason);
 
       if (!season) {
-        logger.debug({ channelFolderName, seasonNumber }, 'Plex season rename: season not yet indexed in Plex');
+        logger.info({ channelFolderName, seasonNumber }, 'Plex season rename: season not yet indexed in Plex');
         return;
       }
 

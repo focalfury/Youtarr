@@ -526,6 +526,8 @@ class PlaylistModule {
   }
 
   async backfillPlexSeasonTitles(playlists) {
+    const eligible = playlists.filter((p) => p.season_number != null && p.title);
+    logger.info({ total: playlists.length, eligible: eligible.length }, 'backfillPlexSeasonTitles started');
     for (const playlist of playlists) {
       if (playlist.season_number == null || !playlist.title) continue;
       if (!playlist.channel_id && !playlist.uploader) continue;
