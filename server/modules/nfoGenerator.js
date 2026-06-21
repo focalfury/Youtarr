@@ -99,7 +99,12 @@ class NfoGenerator {
       });
 
       // Extract and prepare data
-      const title = this.escapeXml(jsonData.fulltitle || jsonData.title || 'Unknown Title');
+      const rawTitle = jsonData.fulltitle || jsonData.title || 'Unknown Title';
+      const uploaderPrefix = (jsonData.uploader || jsonData.channel || '') + ' - ';
+      const strippedTitle = uploaderPrefix.length > 3 && rawTitle.startsWith(uploaderPrefix)
+        ? rawTitle.slice(uploaderPrefix.length)
+        : rawTitle;
+      const title = this.escapeXml(strippedTitle);
       const plot = this.escapeXml(jsonData.description || '');
       const youtubeId = jsonData.id || '';
       const premiered = this.formatDate(jsonData.upload_date);
