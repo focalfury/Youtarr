@@ -263,7 +263,10 @@ class PlaylistModule {
 
   _spawnFlatPlaylist(url) {
     return new Promise((resolve, reject) => {
-      const args = ['--flat-playlist', '--dump-json', url];
+      // --dump-single-json forces yt-dlp to follow all YouTube pagination before
+      // outputting, so large playlists (>100 videos) are not silently truncated.
+      // --dump-json (streaming per-entry) stops after the first InnerTube page.
+      const args = ['--flat-playlist', '--dump-single-json', url];
       const child = spawn('yt-dlp', args);
       let stdout = '';
       let stderr = '';
@@ -275,7 +278,9 @@ class PlaylistModule {
           return reject(new Error('NETWORK_ERROR'));
         }
         try {
-          const entries = stdout.split('\n').filter(Boolean).map((line) => JSON.parse(line));
+          const data = JSON.parse(stdout);
+          const total = data.playlist_count || data.n_entries || (data.entries || []).length;
+          const entries = (data.entries || []).map((e) => ({ ...e, playlist_count: total }));
           resolve(entries);
         } catch (err) {
           reject(new Error('PARSE_ERROR'));
