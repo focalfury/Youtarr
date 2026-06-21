@@ -261,12 +261,16 @@ class PlaylistModule {
     }
   }
 
-  _spawnFlatPlaylist(url) {
+  // Fetch one slice of a playlist using --playlist-start/--playlist-end.
+  // When startItem/endItem are null, fetches from the beginning without a range
+  // limit. Always returns { entries, total } where total is YouTube's reported
+  // playlist size (injected onto each entry so callers can detect truncation).
+  _fetchPlaylistSlice(url, startItem, endItem, knownTotal) {
     return new Promise((resolve, reject) => {
-      // --dump-single-json + --no-lazy-playlist forces yt-dlp to collect all
-      // YouTube pagination pages before outputting, so playlists >100 videos are
-      // not silently truncated to the first InnerTube page.
-      const args = ['--flat-playlist', '--dump-single-json', '--no-lazy-playlist', url];
+      const args = ['--flat-playlist', '--dump-single-json'];
+      if (startItem != null) args.push('--playlist-start', String(startItem));
+      if (endItem != null) args.push('--playlist-end', String(endItem));
+      args.push(url);
       const child = spawn('yt-dlp', args);
       let stdout = '';
       let stderr = '';
@@ -274,19 +278,45 @@ class PlaylistModule {
       child.stderr.on('data', (d) => { stderr += d.toString(); });
       child.on('close', (code) => {
         if (code !== 0) {
-          logger.error({ stderr, code }, '_spawnFlatPlaylist failed');
+          logger.error({ stderr, code }, '_fetchPlaylistSlice failed');
           return reject(new Error('NETWORK_ERROR'));
         }
         try {
           const data = JSON.parse(stdout);
-          const total = data.playlist_count || data.n_entries || (data.entries || []).length;
+          const total = knownTotal ?? data.playlist_count ?? data.n_entries ?? (data.entries || []).length;
           const entries = (data.entries || []).map((e) => ({ ...e, playlist_count: total }));
-          resolve(entries);
+          resolve({ entries, total });
         } catch (err) {
           reject(new Error('PARSE_ERROR'));
         }
       });
     });
+  }
+
+  // yt-dlp truncates large YouTube playlists to the first InnerTube API page
+  // (100 items) when fetching without explicit position bounds. Work around this
+  // by detecting truncation after the first fetch and requesting subsequent
+  // 100-item slices with --playlist-start/--playlist-end until all items are
+  // collected. YouTube MUST follow continuation tokens to serve items 101+.
+  async _spawnFlatPlaylist(url) {
+    const BATCH_SIZE = 100;
+    const { entries: first, total } = await this._fetchPlaylistSlice(url);
+
+    if (!total || first.length >= total) return first;
+
+    const all = [...first];
+    let start = all.length + 1;
+
+    while (all.length < total) {
+      const end = Math.min(start + BATCH_SIZE - 1, total);
+      logger.info({ url, start, end, total, fetched: all.length }, 'Fetching playlist continuation batch');
+      const { entries } = await this._fetchPlaylistSlice(url, start, end, total);
+      if (!entries.length) break;
+      all.push(...entries);
+      start = all.length + 1;
+    }
+
+    return all;
   }
 
   async ensureSourceChannel(uploaderInfo, playlist) {
