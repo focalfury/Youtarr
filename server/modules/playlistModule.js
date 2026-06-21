@@ -99,6 +99,11 @@ class PlaylistModule {
     const entries = await this._spawnFlatPlaylist(playlist.url);
 
     const available = entries.filter((e) => !this.isUnavailableTitle(e.title));
+    const reportedTotal = Number(entries[0]?.playlist_count ?? entries[0]?.n_entries) || null;
+    logger.info(
+      { playlistId, fetched: entries.length, available: available.length, reportedTotal },
+      'fetchAllPlaylistVideos: raw vs available counts'
+    );
 
     const regex = playlist.title_filter_regex ? new RegExp(playlist.title_filter_regex, 'i') : null;
     const passes = (e) => {
