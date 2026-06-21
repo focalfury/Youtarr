@@ -685,7 +685,21 @@ class PlaylistModule {
         if (!channelFolderName && uploader) channelFolderName = sanitizeNameLikeYtDlp(uploader);
 
         if (channelFolderName) {
-          const channelFolderPath = path.join(configModule.directoryPath, channelFolderName);
+          const outputRoot = path.resolve(configModule.directoryPath);
+          const channelFolderPath = path.resolve(path.join(outputRoot, channelFolderName));
+
+          // Safety: channelFolderPath must be exactly one level below the library
+          // root. Catches path traversal (e.g. folder_name='../etc' in the DB)
+          // and prevents accidentally deleting the root or anything above it.
+          const relative = path.relative(outputRoot, channelFolderPath);
+          if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || relative.includes(path.sep)) {
+            logger.error(
+              { channelFolderName, channelFolderPath, outputRoot },
+              'deletePlaylist: refusing file deletion — resolved path is not a direct child of library root'
+            );
+            return;
+          }
+
           await fs.remove(channelFolderPath);
           logger.info({ channelFolderPath }, 'deletePlaylist: deleted channel folder');
         }

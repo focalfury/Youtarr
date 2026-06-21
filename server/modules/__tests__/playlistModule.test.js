@@ -1272,5 +1272,65 @@ describe('playlistModule', () => {
       const removedPaths = fs.remove.mock.calls.map(([p]) => p);
       expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\') || p.endsWith('TestChannel/'))).toBe(true);
     });
+
+    describe('path-traversal safety guard', () => {
+      // logger must be re-required inside a nested beforeEach that runs AFTER the
+      // outer beforeEach (which calls jest.resetModules), otherwise this variable
+      // holds a stale reference that is different from the instance playlistModule uses.
+      let loggerMock;
+      beforeEach(() => { loggerMock = require('../../logger'); });
+
+      it('refuses to delete when folder_name is ".." (would resolve to library root parent)', async () => {
+        Channel.findOne.mockResolvedValue({ folder_name: '..', uploader: null });
+
+        await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+        const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+        const dangerousPaths = removedPaths.filter(p => !p.includes('__playlists__') && !p.includes('playlistthumb'));
+        expect(dangerousPaths).toHaveLength(0);
+        expect(loggerMock.error).toHaveBeenCalledWith(
+          expect.objectContaining({ channelFolderName: '..' }),
+          expect.stringContaining('refusing file deletion')
+        );
+      });
+
+      it('refuses to delete when folder_name contains path traversal (../../etc)', async () => {
+        Channel.findOne.mockResolvedValue({ folder_name: '../../etc', uploader: null });
+
+        await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+        const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+        const dangerousPaths = removedPaths.filter(p => !p.includes('__playlists__') && !p.includes('playlistthumb'));
+        expect(dangerousPaths).toHaveLength(0);
+        expect(loggerMock.error).toHaveBeenCalledWith(
+          expect.objectContaining({ channelFolderName: '../../etc' }),
+          expect.stringContaining('refusing file deletion')
+        );
+      });
+
+      it('refuses to delete when resolved path has more than one level below root (nested subfolder)', async () => {
+        Channel.findOne.mockResolvedValue({ folder_name: 'Channel/Nested', uploader: null });
+
+        await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+        const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+        const dangerousPaths = removedPaths.filter(p => !p.includes('__playlists__') && !p.includes('playlistthumb'));
+        expect(dangerousPaths).toHaveLength(0);
+        expect(loggerMock.error).toHaveBeenCalledWith(
+          expect.objectContaining({ channelFolderName: 'Channel/Nested' }),
+          expect.stringContaining('refusing file deletion')
+        );
+      });
+
+      it('allows deletion of a valid single-level channel folder', async () => {
+        Channel.findOne.mockResolvedValue({ folder_name: 'SafeChannel', uploader: null });
+
+        await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+        const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+        expect(removedPaths.some(p => p.endsWith('SafeChannel') || p.endsWith('SafeChannel\\'))).toBe(true);
+        expect(loggerMock.error).not.toHaveBeenCalled();
+      });
+    });
   });
 });
