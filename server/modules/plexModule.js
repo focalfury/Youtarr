@@ -249,7 +249,19 @@ class PlexModule {
       }
 
       if (!showRatingKey) {
-        logger.info({ channelFolderName }, 'Plex season rename: show not yet indexed in Plex');
+        const allPaths = [];
+        for (const sectionId of sections) {
+          try {
+            const r = await axios.get(`${baseUrl}/library/sections/${sectionId}/all`, {
+              params: { type: 2, 'X-Plex-Token': token },
+              timeout: PLEX_REQUEST_TIMEOUT_MS,
+            });
+            (r.data?.MediaContainer?.Metadata || []).forEach((s) =>
+              (s.Location || []).forEach((loc) => allPaths.push(path.basename(loc.path)))
+            );
+          } catch (_) {}
+        }
+        logger.info({ channelFolderName, plexShowFolders: allPaths }, 'Plex season rename: show not yet indexed in Plex');
         return;
       }
 
