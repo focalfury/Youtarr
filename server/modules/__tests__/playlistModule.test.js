@@ -1256,12 +1256,26 @@ describe('playlistModule', () => {
       expect(removedPaths.some(p => p.includes('TestChannel') && !p.includes('__playlists__') && !p.includes('playlistthumb'))).toBe(false);
     });
 
-    it('deletes the entire channel folder when deleteFiles is true', async () => {
+    it('deletes the entire channel folder when deleteFiles is true and no other playlists remain', async () => {
+      // Playlist.findAll returns [] by default from beforeEach — no siblings.
       await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
 
       const removedPaths = fs.remove.mock.calls.map(([p]) => p);
-      // Should remove a path ending in the channel folder name (no season subfolder).
-      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\') || p.endsWith('TestChannel/'))).toBe(true);
+      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\'))).toBe(true);
+    });
+
+    it('deletes only the season folder when other playlists from the same channel still exist', async () => {
+      const sibling = { playlist_id: 'PLsibling' };
+      // First findAll: siblings check (returns a sibling). No second findAll since deleteFiles=true skips nfo rebuild.
+      Playlist.findAll.mockResolvedValueOnce([sibling]);
+
+      await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
+
+      const removedPaths = fs.remove.mock.calls.map(([p]) => p);
+      // Channel folder must NOT be removed.
+      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\'))).toBe(false);
+      // Season folder MUST be removed.
+      expect(removedPaths.some(p => p.includes('Season 01'))).toBe(true);
     });
 
     it('uses uploader as folder name when channel lookup yields nothing', async () => {
@@ -1270,7 +1284,7 @@ describe('playlistModule', () => {
       await playlistModule.deletePlaylist(mockPlaylist, { deleteFiles: true });
 
       const removedPaths = fs.remove.mock.calls.map(([p]) => p);
-      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\') || p.endsWith('TestChannel/'))).toBe(true);
+      expect(removedPaths.some(p => p.endsWith('TestChannel') || p.endsWith('TestChannel\\'))).toBe(true);
     });
 
     describe('path-traversal safety guard', () => {

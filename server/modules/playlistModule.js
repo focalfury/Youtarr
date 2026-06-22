@@ -691,8 +691,8 @@ class PlaylistModule {
           // Safety: channelFolderPath must be exactly one level below the library
           // root. Catches path traversal (e.g. folder_name='../etc' in the DB)
           // and prevents accidentally deleting the root or anything above it.
-          const relative = path.relative(outputRoot, channelFolderPath);
-          if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || relative.includes(path.sep)) {
+          const relToRoot = path.relative(outputRoot, channelFolderPath);
+          if (!relToRoot || relToRoot.startsWith('..') || path.isAbsolute(relToRoot) || relToRoot.includes(path.sep)) {
             logger.error(
               { channelFolderName, channelFolderPath, outputRoot },
               'deletePlaylist: refusing file deletion — resolved path is not a direct child of library root'
@@ -700,8 +700,34 @@ class PlaylistModule {
             return;
           }
 
-          await fs.remove(channelFolderPath);
-          logger.info({ channelFolderPath }, 'deletePlaylist: deleted channel folder');
+          // Check whether other playlists from the same channel still exist. The
+          // current playlist has already been destroyed above, so this query only
+          // returns siblings. When siblings exist, remove only this season's
+          // subfolder rather than wiping the shared channel folder.
+          const remainingScope = channel_id ? { channel_id } : { uploader };
+          const siblings = await Playlist.findAll({ where: remainingScope, attributes: ['playlist_id'] });
+
+          if (siblings.length > 0) {
+            const seasonPrefix = `Season ${String(season_number).padStart(2, '0')} - `;
+            const seasonFolderName = seasonPrefix + sanitizeNameLikeYtDlp(title || '').substring(0, 80);
+            const seasonFolderPath = path.resolve(path.join(channelFolderPath, seasonFolderName));
+
+            // Safety: season folder must be a direct child of the channel folder.
+            const relToChannel = path.relative(channelFolderPath, seasonFolderPath);
+            if (!relToChannel || relToChannel.startsWith('..') || path.isAbsolute(relToChannel) || relToChannel.includes(path.sep)) {
+              logger.error(
+                { seasonFolderName, seasonFolderPath, channelFolderPath },
+                'deletePlaylist: refusing season folder deletion — path is not a direct child of channel folder'
+              );
+              return;
+            }
+
+            await fs.remove(seasonFolderPath);
+            logger.info({ seasonFolderPath, siblingsRemaining: siblings.length }, 'deletePlaylist: deleted season folder (channel has other playlists)');
+          } else {
+            await fs.remove(channelFolderPath);
+            logger.info({ channelFolderPath }, 'deletePlaylist: deleted channel folder (no remaining playlists)');
+          }
         }
       } catch (err) {
         logger.warn({ err }, 'deletePlaylist: failed to delete channel folder');
